@@ -26,11 +26,15 @@ const OAUTH_TOKEN_STUB = "sk-ant-oat01-stub-token-for-drift-check";
 type OutboundMessage = { role?: unknown; output_config?: unknown };
 type OutboundBody = { system?: unknown; messages?: OutboundMessage[] };
 
-function findManagedEffortModel(): Model<"anthropic-messages"> | undefined {
-  return getBuiltinModels("anthropic").find(
-    (model) => model.compat?.supportsMidConvoEffort === true,
-  );
-}
+// Every flagged model is driven, so a model a new Pi release adds is covered
+// without a test edit (Issue #81).
+const MANAGED_EFFORT_MODELS: Model<"anthropic-messages">[] = getBuiltinModels(
+  "anthropic",
+).filter((model) => model.compat?.supportsMidConvoEffort === true);
+
+const MANAGED_EFFORT_CASES = MANAGED_EFFORT_MODELS.map(
+  (model) => [model.id, model] as const,
+);
 
 /** A prior turn Pi recorded as answered at `"medium"` effort. */
 function priorAssistantTurn(model: Model<"anthropic-messages">) {
@@ -120,40 +124,42 @@ function effortMessages(body: OutboundBody): OutboundMessage[] {
 }
 
 test("Pi's catalog still has a managed-effort Anthropic model", () => {
-  assert.ok(
-    findManagedEffortModel(),
+  // `test.each([])` runs no cases, so this is what fails if Pi drops the flag.
+  assert.notDeepEqual(
+    MANAGED_EFFORT_MODELS.map((model) => model.id),
+    [],
     "No anthropic model sets compat.supportsMidConvoEffort; re-check how Pi carries per-message effort.",
   );
 });
 
 // If Pi moves effort back to the top level, the `output_config` keep rule in
 // `shapeSystemRoleMessages` becomes dead code and should be removed.
-test("Pi carries historical and active effort in content-less system messages", async () => {
-  const model = findManagedEffortModel();
-  assert.ok(model);
+test.each(MANAGED_EFFORT_CASES)(
+  "Pi carries historical and active effort in content-less system messages (%s)",
+  async (_id, model) => {
+    const body = await captureOutboundBody(model, { wrapped: false });
 
-  const body = await captureOutboundBody(model, { wrapped: false });
+    assert.deepEqual(effortMessages(body), [
+      { role: "system", content: [], output_config: { effort: "medium" } },
+      { role: "system", content: [], output_config: { effort: "low" } },
+    ]);
+  },
+);
 
-  assert.deepEqual(effortMessages(body), [
-    { role: "system", content: [], output_config: { effort: "medium" } },
-    { role: "system", content: [], output_config: { effort: "low" } },
-  ]);
-});
+test.each(MANAGED_EFFORT_CASES)(
+  "OAuth shaping keeps every effort message Pi sends (%s)",
+  async (_id, model) => {
+    const unshaped = await captureOutboundBody(model, { wrapped: false });
+    const shaped = await captureOutboundBody(model, { wrapped: true });
 
-test("OAuth shaping keeps every effort message Pi sends", async () => {
-  const model = findManagedEffortModel();
-  assert.ok(model);
+    // Both guard against a vacuous pass: two empty lists compare equal, and an
+    // unshaped "shaped" body would keep every message trivially.
+    assert.notDeepEqual(effortMessages(unshaped), []);
+    assert.match(
+      JSON.stringify(shaped.system),
+      new RegExp(BILLING_HEADER_MARKER),
+    );
 
-  const unshaped = await captureOutboundBody(model, { wrapped: false });
-  const shaped = await captureOutboundBody(model, { wrapped: true });
-
-  // Both guard against a vacuous pass: two empty lists compare equal, and an
-  // unshaped "shaped" body would keep every message trivially.
-  assert.notDeepEqual(effortMessages(unshaped), []);
-  assert.match(
-    JSON.stringify(shaped.system),
-    new RegExp(BILLING_HEADER_MARKER),
-  );
-
-  assert.deepEqual(effortMessages(shaped), effortMessages(unshaped));
-});
+    assert.deepEqual(effortMessages(shaped), effortMessages(unshaped));
+  },
+);

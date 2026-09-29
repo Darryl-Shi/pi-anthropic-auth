@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.3.3](https://github.com/gotgenes/pi-anthropic-auth/compare/v3.3.2...v3.3.3) (2026-09-29)
+
+
+### Miscellaneous Chores
+
+* bump pi devDependencies to 0.99.1 ([#81](https://github.com/gotgenes/pi-anthropic-auth/issues/81)) ([d14d9bd](https://github.com/gotgenes/pi-anthropic-auth/commit/d14d9bdad0ffe7ba28b3802b5a1eeebd3e8798e6))
+
 ## [3.3.2](https://github.com/gotgenes/pi-anthropic-auth/compare/v3.3.1...v3.3.2) (2026-09-24)
 
 

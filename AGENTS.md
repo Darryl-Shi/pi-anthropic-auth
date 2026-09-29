@@ -489,7 +489,7 @@ Current suites map roughly to:
 10. `test/upstream-prompt-drift.test.ts` — the prompt prefix, section names, and anchors in `src/constants.ts` checked against the installed Pi's own `buildSystemPrompt` output, plus pins that the parser round-trips that prompt and that shaping takes the section path rather than the degraded passthrough.
 11. `test/extension-config.test.ts` — config paths, the parsing rules (`anthropic` and duplicates dropped, malformed files and entries warned), and a missing file staying silent.
 12. `test/extra-provider-shaping.test.ts` — one `{ api, streamSimple }` registration per named provider, no unregister, first layer wins, and per-layer warning replacement.
-13. `test/managed-effort-drift.test.ts` — the offline drift alarm for per-message effort: Pi's catalog still flags a managed-effort model, Pi still carries historical and active effort in content-less system messages, and OAuth shaping keeps every one of them (PR #79).
+13. `test/managed-effort-drift.test.ts` — the offline drift alarm for per-message effort: Pi's catalog still flags a managed-effort model, and for every model it flags, Pi still carries historical and active effort in content-less system messages, and OAuth shaping keeps every one of them (PR #79).
 
 Priority areas for new tests:
 

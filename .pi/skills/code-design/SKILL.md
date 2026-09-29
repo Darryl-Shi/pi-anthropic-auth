@@ -219,7 +219,7 @@ Cast each return's `details` `as <Union>` so the full union flows into the gener
 ### Reading Pi's own source
 
 - For Pi SDK internals (prompt assembly, caching, session lifecycle), read Pi's own source at the `pi` checkout beside this repo (`../pi`, that is `~/development/pi/pi`), rather than the installed `dist/` bundles or their sourcemaps.
-  Dispatch an `Explore` subagent with `model: "sonnet-5"` for a multi-hop trace there (e.g. "how does `ui.custom` pass keybindings to the factory?") — a targeted read of a known file is fine inline, but a hunt costs 5–10 greps of this session's context, and `Explore`'s haiku default is too weak for the reasoning.
+  Dispatch an `Explore` subagent with `model: "sonnet-5-5"` for a multi-hop trace there (e.g. "how does `ui.custom` pass keybindings to the factory?") — a targeted read of a known file is fine inline, but a hunt costs 5–10 greps of this session's context, and `Explore`'s haiku default is too weak for the reasoning.
   Keep the trace inline when its output is a universal claim the design will rest on — a subagent returns it as a summary you would have to re-verify anyway.
   The checkout tracks Pi's `main` and runs ahead of the pinned dependency.
   Read it for mechanism, but confirm any API you design around exists in the installed version first — resolve the version from this repo's `devDependencies` pin, then `grep` the types under that exact `node_modules/.pnpm/@earendil-works+pi-coding-agent@<version>_*/` directory.

@@ -111,9 +111,10 @@ Current source layout:
 10. `src/system-prompt-sections.ts`: parser for Pi's XML-sectioned system prompt, splitting it into ordered chunks and rendering them back byte-exactly (Issue #67)
 11. `src/system-prompt-shaping.ts`: section-aware Anthropic OAuth prompt sanitizer that replaces Pi's preamble, drops the `docs` section, strips the `tools` filler, and preserves everything else
 12. `src/debug.ts`: opt-in structured debug logging for live OAuth repros
-13. `src/diagnostics.ts`: `ExtensionDiagnostics` value object, formatter, and handler factory for the `/anthropic-auth:status` command
+13. `src/diagnostics.ts`: `ExtensionDiagnostics` value object, formatter, argument completions, and handler factory for the `/anthropic-auth:status` command, including its per-provider `accounts:` block (Issue #80)
 14. `src/extension-config.ts`: the config file paths and a parser that turns malformed files and entries into warnings instead of throwing (Issue #70)
 15. `src/extra-provider-shaping.ts`: registers the wrapper on each provider the config names, never unregistering it, and records the naming layer and warnings for the status command (Issue #70)
+16. `src/account-profile.ts`: looks up the Anthropic account behind a provider's OAuth login via `GET /api/oauth/profile`, never throwing, for the status command (Issue #80)
 
 ### Project Skills
 
@@ -490,6 +491,7 @@ Current suites map roughly to:
 11. `test/extension-config.test.ts` — config paths, the parsing rules (`anthropic` and duplicates dropped, malformed files and entries warned), and a missing file staying silent.
 12. `test/extra-provider-shaping.test.ts` — one `{ api, streamSimple }` registration per named provider, no unregister, first layer wins, and per-layer warning replacement.
 13. `test/managed-effort-drift.test.ts` — the offline drift alarm for per-message effort: Pi's catalog still flags a managed-effort model, and for every model it flags, Pi still carries historical and active effort in content-less system messages, and OAuth shaping keeps every one of them (PR #79).
+14. `test/account-profile.test.ts` — the profile lookup: no request without an OAuth token, the request's headers, tolerant field parsing, and each `unavailable` reason (Issue #80).
 
 Priority areas for new tests:
 

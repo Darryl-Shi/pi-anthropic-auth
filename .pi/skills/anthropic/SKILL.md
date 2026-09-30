@@ -59,6 +59,7 @@ compatibility: Intended for the pi-anthropic-auth repository and Pi Anthropic OA
 
 Before anything else, run `/anthropic-auth:status` in Pi.
 The command prints the loaded version, the module path (which install it loaded from), and whether the built-in Anthropic transport resolved.
+Its `accounts:` block shows the plan behind each shaped provider's OAuth login (plan type, seat, rate-limit tier, subscription status, extra usage); `/anthropic-auth:status --account` adds the email and organization name, for telling several logins apart (Issue #80).
 If the command is not found, the extension is not loaded — check for a Docker volume or `pi install` issue before debugging request shaping.
 
 Two copies can load at once — a local `-e`/`"../"` source copy and an installed npm copy from a `settings.json` `packages[]` entry (repo and global settings both contribute).

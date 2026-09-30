@@ -77,11 +77,25 @@ pi-anthropic-auth diagnostics
   module:  /root/.pi/agent/.../src/index.ts
   built-in Anthropic transport: resolved
   shaped providers: anthropic, anthropic-2 (global)
+  accounts:
+    anthropic: claude_max, rate limit default_claude_max_20x, subscription active, extra usage off
+    anthropic-2: claude_team, seat team_standard, rate limit default_raven, subscription active, extra usage on
 ```
 
 The `module` line shows which copy of the extension loaded.
 If the command is not found, the extension is not loaded at all.
 The `shaped providers` line lists `anthropic` and every provider named in a config file, with the file (`global` or `project`) that named it.
+
+The `accounts` block asks Anthropic which subscription each shaped provider's OAuth login belongs to: plan type, seat, rate-limit tier, subscription status, and whether extra usage is enabled.
+A provider logged in with an API key, with no login, or whose token could not be refreshed shows `no OAuth login`; a failed lookup shows `unavailable` with the reason.
+
+To tell several logins apart, run `/anthropic-auth:status --account`, which also shows each account's email and organization name:
+
+```text
+    anthropic: person@example.com (person@example.com's Organization), claude_max, ...
+```
+
+The plain report leaves these out so it is safe to paste into an issue; a personal organization is named after its email, so the organization name is identifying too.
 
 ### Another Anthropic provider fails with "You're out of extra usage"
 
@@ -94,6 +108,7 @@ Short prompts can pass without the header, so the failure often shows up only in
 
 Check `/anthropic-auth:status`.
 If the failing provider is missing from `shaped providers`, name it in the config file (see [Additional Anthropic subscriptions](#additional-anthropic-subscriptions)).
+Its line under `accounts` shows which subscription that provider's login belongs to, and whether extra usage is enabled on it.
 
 ### Pi warns about extra usage on every OAuth session
 

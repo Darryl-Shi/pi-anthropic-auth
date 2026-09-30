@@ -20,9 +20,12 @@ Mirror what CI runs (`.github/workflows/ci.yml` runs these on every push and PR)
 1. `pnpm run check` — typecheck.
 2. `pnpm run lint` — biome, eslint, and rumdl.
 3. `pnpm test` — the vitest suite.
+4. `pnpm fallow:dead-code` — CI runs this gate on every `main` push (not on PRs), so a pre-existing failure blocks your push regardless of whether this work introduced it.
+
+Run each gate unpiped — a pipeline's exit status is the filter's, so `pnpm run lint | tail` reports success on a failure.
+Redirect instead: `pnpm run lint >/tmp/lint.log 2>&1 || tail -30 /tmp/lint.log`.
 
 If any fails, fix the issues and commit before pushing.
-Optionally run `pnpm fallow:dead-code` for dead-code hygiene — it is not a CI gate here, so do not block the push on pre-existing fallow findings.
 
 If this session did not run `/tdd-plan` or `/build-plan`, dispatch the `pre-completion-reviewer` subagent before pushing — ad-hoc work otherwise reaches a tagged release with no fresh-context review.
 
@@ -34,8 +37,9 @@ If this session did not run `/tdd-plan` or `/build-plan`, dispatch the `pre-comp
 
 ## 4. Verify CI on the pushed commit
 
-1. Use `ci_find` with the pushed SHA (`git rev-parse HEAD`) and workflow `ci` to locate the CI run.
-2. Use `ci_watch` with the returned `run_id` and workflow `ci` to wait for it to complete.
+1. Run `git rev-parse HEAD` to capture the full SHA, and pass that exact value to `ci_find` with workflow `ci` — never hand-expand the short SHA from the `git push` output.
+   If `ci_find` times out, re-check the SHA you passed against `git rev-parse HEAD` before assuming a timing miss.
+2. Use `ci_watch` with the returned `run_id`, workflow `ci`, and `timeout: 600` to wait for it to complete.
 3. If the run conclusion is `failure`, stop and report.
    Do not merge anything.
 4. If it lands `success`, continue.

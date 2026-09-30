@@ -117,7 +117,7 @@ The upstream issue should therefore be authored in the operator's own voice, gro
 **Status: transport acquisition implemented; all-paths coverage not implemented.**
 
 The acquisition half is done.
-The upstream seam ask ([pi#6089]) was auto-closed by pi's new-contributor bot and will not be actioned, but pi independently shipped expanded custom-provider support that resolves the acquisition problem in practice: the extension loader aliases (Node) and virtualizes (Bun) the `@earendil-works/pi-ai/compat` subpath in every mode, and pi ships `custom-provider-gitlab-duo` as an official example that delegates to `anthropicMessagesApi().streamSimple` through that same subpath.
+The upstream seam ask ([pi#6089]) was auto-closed by pi's new-contributor bot and will not be actioned, but pi independently shipped expanded custom-provider support that resolves the acquisition problem in practice: the extension loader maps the `@earendil-works/pi-ai/compat` subpath in every mode (through its `alias` or `virtualModules` table), and pi ships `custom-provider-gitlab-duo` as an official example that delegates to `anthropicMessagesApi().streamSimple` through that same subpath.
 The #35 seam concern is therefore resolved in practice on pi >=0.80.8; the residual watch is the eventual `compat` removal, when `anthropicMessagesApi()` relocates off the compat entrypoint.
 
 The coverage half is not, and will not be from this side.

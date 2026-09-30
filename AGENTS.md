@@ -585,12 +585,12 @@ Pi's built-in Anthropic provider is already much closer to the desired Claude Co
 The extension registers a `streamSimple` wrapper, because hooks proved insufficient: `before_provider_request` does not fire for compaction or background-agent calls (Issue #18).
 The wrapper stays thin — it delegates to Pi's own built-in Anthropic `streamSimple` transport (resolved at runtime via `src/host-transport.ts`) and only injects an `onPayload` shaping step gated on the OAuth token.
 The delegate is resolved at runtime rather than read out of the api registry: `anthropicMessagesApi()` is the non-deprecated handle pi's own example uses, and reading from a registry this extension does not participate in would bind the delegate to whatever another extension registered there last (on pi <=0.80.7 it would also have recursed, since the bridge put our wrapper in that slot).
-The resolver imports the `@earendil-works/pi-ai/compat` subpath — the path pi's own `custom-provider-gitlab-duo` example delegates through — which Pi's loader aliases (Node) / virtualizes (Bun) to its own bundled pi-ai compat entrypoint (`dist/compat.js` on pi >=0.80.x).
+The resolver imports the `@earendil-works/pi-ai/compat` subpath — the path pi's own `custom-provider-gitlab-duo` example delegates through — which Pi's loader maps (through its `alias` or `virtualModules` table) to its own bundled pi-ai compat entrypoint (`dist/compat.js` on pi >=0.80.x).
 It reads the non-deprecated `anthropicMessagesApi().streamSimple` factory and throws if that handle is absent.
 There is no fallback to the deprecated `streamSimpleAnthropic` alias: the factory has shipped from the compat entrypoint since pi v0.80.0, below the `>=0.86.0` peer floor, so the fallback was unreachable and was removed (Issue #54).
 The throw is what surfaces the compat-removal cliff loudly instead of mis-resolving.
 The earlier `import.meta.resolve("@earendil-works/pi-ai")` plus subpath-file import bypassed that indirection — jiti consults its alias map on the import path but not the `resolve` path — so it fell through to the extension's own directory and failed under `pi install` / the Bun binary (Issue #31).
-The #35 seam concern is resolved in practice on pi >=0.80.8 (the loader aliases `/compat` in both modes and pi ships this delegation pattern as an official example); the residual watch is the eventual `compat` removal, when `anthropicMessagesApi()` relocates off the compat entrypoint.
+The #35 seam concern is resolved in practice on pi >=0.80.8 (the loader maps `/compat` in every mode and pi ships this delegation pattern as an official example); the residual watch is the eventual `compat` removal, when `anthropicMessagesApi()` relocates off the compat entrypoint.
 
 ### `registerProvider` Merges, It Does Not Replace
 
@@ -612,11 +612,12 @@ In this repo, prefer the dashed form `anthropic/claude-haiku-4-5` in docs and re
 
 When asserting that behavior holds across loader modes, verify each one independently; do not extrapolate from the installed host.
 
-As of pi 0.84.0 the loader picks among three modes:
+As of pi 0.99.1 the loader (`packages/coding-agent/src/core/extensions/loader.ts`) picks among three modes:
 
-1. Bun binary: `virtualModules` against modules embedded in the executable, with `tryNative: false`
+1. Embedded modules (`isBunBinary || isNodeSeaBinary || isBundledNode`): `virtualModules` against modules embedded in the build, with `tryNative: false`.
+   The npm `pi` bin has been the esbuild-bundled Node distribution (`dist/bundle/cli.js`) since pi 0.84.3, so npm installs take this mode, not the `alias` map; no pi release builds a Node SEA binary.
 2. TypeScript source (pi run from its own `.ts` sources): `virtualModules` plus `tsconfigPaths`
-3. Built Node: the `alias` map resolved to `dist/...` entrypoints
+3. Unbundled built Node (the `dist/index.js` library entry, for SDK embedders): the `alias` map resolved to `dist/...` entrypoints
 
 Pi 0.84.0 added mode 2; before it, source runs took the `alias` path.
 The minimum supported host is pi >=0.86.0; every mode maps both the bare `@earendil-works/pi-ai` specifier and the `/compat` subpath to pi's own pi-ai compat entrypoint (`dist/compat.js`), and all expose `unregisterProvider` on the extension API.

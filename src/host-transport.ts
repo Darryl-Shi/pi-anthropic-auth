@@ -19,8 +19,8 @@ export type AnthropicStreamSimpleDelegate = StreamFunction<
  * A pi-ai module namespace, treated as a plain record for property lookup.
  *
  * The `@earendil-works/pi-ai/compat` import yields the host's pi-ai compat
- * entrypoint (`dist/compat.js` on pi >=0.80.x), which the host loader aliases
- * (Node) / virtualizes (Bun) that subpath to.
+ * entrypoint (`dist/compat.js` on pi >=0.80.x), which the host loader maps
+ * that subpath to through its `alias` or `virtualModules` table.
  * This type captures only the index-signature access the resolver needs, so
  * `pickAnthropicStreamSimple` is unit-testable with a plain object.
  */
@@ -72,11 +72,11 @@ export function pickAnthropicStreamSimple(
  * Resolves Pi's built-in Anthropic `streamSimple` transport at runtime.
  *
  * An `import("@earendil-works/pi-ai/compat")` goes through Pi's extension
- * loader, which aliases (Node) / virtualizes (Bun) that subpath to its bundled
- * pi-ai compat entrypoint (`dist/compat.js` on pi >=0.80.x).
+ * loader, which maps that subpath (through its `alias` or `virtualModules`
+ * table) to its bundled pi-ai compat entrypoint (`dist/compat.js` on pi >=0.80.x).
  * We import the `/compat` subpath explicitly — the path pi's own
  * `custom-provider-gitlab-duo` example uses — rather than the bare root: the
- * loader aliases both to the same entrypoint, but `/compat` names the surface
+ * loader maps both to the same entrypoint, but `/compat` names the surface
  * we actually depend on.  The compat entrypoint re-exports the forward
  * `anthropicMessagesApi` factory.
  *

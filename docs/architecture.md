@@ -76,9 +76,9 @@ On pi <=0.80.7 the rationale was stronger still: `registerProvider` wrote our wr
 The related Issue #28 lazy-registration clobber is precluded by the `>=0.86.0` peer floor.
 The resolver imports `@earendil-works/pi-ai/compat` — the subpath pi's own `custom-provider-gitlab-duo` example delegates through — and reads the non-deprecated `anthropicMessagesApi().streamSimple` factory, throwing when that handle is absent.
 It consults no other handle: the factory has shipped from the compat entrypoint since pi v0.80.0, below the `>=0.86.0` peer floor, so the former fallback to the deprecated `streamSimpleAnthropic` alias could not be reached by any supported host and was removed (Issue #54).
-On pi >=0.80.8 the host loader aliases (Node) / virtualizes (Bun) both the bare `@earendil-works/pi-ai` specifier and the `/compat` subpath to its bundled compat entrypoint (`dist/compat.js`); the subpath names the surface we actually depend on.
+On pi >=0.80.8 the host loader maps (through its `alias` or `virtualModules` table) both the bare `@earendil-works/pi-ai` specifier and the `/compat` subpath to its bundled compat entrypoint (`dist/compat.js`); the subpath names the surface we actually depend on.
 A loader-aliased specifier is required because `import.meta.resolve` and non-aliased subpath imports bypass that host indirection: jiti consults its `alias`/`virtualModules` maps on the import path but not on the `resolve` path, so the former `import.meta.resolve("@earendil-works/pi-ai")` plus derived `dist/...` file import fell through to filesystem resolution from the extension's own directory and failed when pi-ai was absent from it — the `pi install` and Bun-binary cases (Issue #31).
-The #35 seam concern is resolved in practice: the loader aliases `/compat` in both modes and pi ships this delegation pattern as an official example.
+The #35 seam concern is resolved in practice: the loader maps `/compat` in every mode and pi ships this delegation pattern as an official example.
 The residual watch is the eventual `compat` removal, at which point `anthropicMessagesApi()` relocates off the compat entrypoint (Issue #35).
 
 ## Provider-name scope

@@ -50,7 +50,7 @@ The dispatching agent provides:
 - **Issue number** — the GitHub issue being worked on.
 - **Modified files** — list of files changed since the last release tag.
 - **Plan file path** — path to the plan document (may be absent for unplanned work).
-- **Base ref** — the commit the range starts from (the plan commit's parent), for the decision surface in section 2k.
+- **Base ref** — the commit the range starts from (the plan commit's parent), for the commit range in section 2b and the decision surface in section 2k.
 
 Read the plan file before proceeding if one is provided.
 It documents design decisions, scope, and the test strategy — essential context for judgment sections.
@@ -96,9 +96,11 @@ When an AC uses a universal quantifier ("all X", "every Y"), search beyond just 
 Run:
 
 ```bash
-BASE=$(git describe --tags --abbrev=0 2>/dev/null || git rev-list --max-parents=0 HEAD)
-git log --oneline $BASE..HEAD
+git log --oneline <base ref>..HEAD
 ```
+
+Use the base ref the dispatcher provides; a tag base spans other issues' commits.
+With no base ref, fall back to `$(git describe --tags --abbrev=0)..HEAD`.
 
 Confirm each commit message follows `type(scope): description` or `type: description`.
 Valid types: `feat`, `fix`, `docs`, `test`, `refactor`, `style`, `chore`, `ci`.

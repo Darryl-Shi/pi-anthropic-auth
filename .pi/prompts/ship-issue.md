@@ -143,7 +143,7 @@ A shipped issue can also supersede open third-party PRs without either being the
 Close each PR the release-coordination read of the plan and retro named, with `gh pr comment` then `gh pr close`, never merge, crediting the author by `@login`.
 Read each PR's body first (`gh pr view <M> --json body -q .body`) — what a PR flagged, covered, or omitted is a claim about the PR, and the plan's summary of it is not that source.
 
-Then check whether this push shipped work for **other** issues in the `"$PLAN"^..HEAD` range.
+Then check whether this push shipped work for **other** issues in the `"$PLAN"^..HEAD` range; re-derive `PLAN` in that same call, since a fresh shell does not carry it.
 A co-shipped issue shows as a stacked refactor/enabler, a subject-trailing `(#M)` commit ref, or a sibling `docs/plans/`/`docs/retro/` file added in range — a body-line `Refs #M` is a citation, not a ship.
 A mid-batch sibling that shipped on its own `/ship-issue` is already closed by that ship — this scan is for stacked work that never had a ship of its own.
 Close each with its own short summary — `cliff.toml` skips `refactor:` commits, so a stacked refactor issue leaves no changelog entry to remind you.

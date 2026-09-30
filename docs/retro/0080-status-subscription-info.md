@@ -40,3 +40,43 @@ Tests went from 205 to 234 (+29); `check`, `lint`, and `fallow:dead-code` are cl
 - The identity-gating pins in `test/diagnostics.test.ts` were mutation-checked (forcing `includeIdentity` true, and dropping the gate in `describeProfile`).
 - `mockReset` (not `mockClear`) was needed in the diagnostics `beforeEach`, because one test installs a per-provider `mockImplementation`.
 - Pre-completion reviewer: PASS, including an independent re-derivation of the privacy invariant (no email or organization name in the default report for any field combination).
+
+## Stage: Final Retrospective (2026-09-30T04:05:51Z)
+
+### Session summary
+
+One session planned, implemented, shipped, and released #80 as v3.4.0: a per-provider `accounts:` block in `/anthropic-auth:status`, with email and organization name behind `--account`.
+The design came out of three `ask_user` rounds with the operator on a third-party issue, grounded in live measurements of `/api/oauth/profile`.
+
+### Observations
+
+#### What went well
+
+- Measuring the endpoint live at planning time (six `node -e` probes, well under a minute) found that a personal organization is named `<email>'s Organization`.
+  No amount of reading the issue would have shown that, and it turned "show the org name" into "org name is identity, opt-in only".
+- Novel: `pi -ne -e src/index.ts -p "/anthropic-auth:status"` runs an extension slash command headlessly and prints its `console.log` output.
+  The plan had called the live check "interactive"; the headless form made it a scripted, repeatable step.
+- The TDD execution was clean: six commits, each green, with mutation checks on the privacy pins and on the one test that passed at Red.
+
+#### What caused friction (agent side)
+
+- `other` — context sent as message text immediately before a *follow-up* `ask_user` call (no other tool call in between) was not visible to the operator.
+  The first `ask_user` after tool calls displayed its preceding context fine; the two calls that came straight after an `ask_user` result did not, and the operator had to say so twice ("Your thinking is hidden", "You did it again").
+  User-caught.
+  Impact: two wasted dialog rounds and a third turn to deliver the explanation as a plain message.
+- `missing-context` — I recommended "never show email", calling the same-plan multi-account case niche, although this repo's own Issue #70 work and README section exist because users register several Anthropic accounts (pi-multi-pass's `anthropic-2`).
+  User-caught: the operator pointed out that multi-account users exist and are likely the issue's real motivation.
+  Impact: one extra decision round; no rework, since it was caught before the plan was written.
+
+#### What caused friction (user side)
+
+- None of substance; the operator's multi-account note was exactly the strategic context the design needed, and arrived at the right moment.
+
+### Diagnostic details
+
+- **Feedback-loop gap analysis** — `pnpm run check` and the affected test file ran after every step; two lint slips (biome formatting, and an eslint `no-unnecessary-condition` on `init?.headers` in `test/account-profile.test.ts`) were caught only by the pre-commit hook in step 3, costing one failed commit attempt.
+
+### Changes made
+
+1. `.pi/skills/pi-cli-repro/SKILL.md`: added the headless slash-command recipe (`pi -ne -e <path>/src/index.ts -p "/anthropic-auth:status"`).
+2. Proposed but not landed, at the operator's call: an `AGENTS.md` rule for context before back-to-back `ask_user` calls; the mechanism is unverified, and same-turn context before a first `ask_user` does work.

@@ -36,6 +36,8 @@ Why this shape:
 - `-p` gives a fast non-interactive cycle
 - `anthropic/claude-haiku-4-5` is the preferred fast repro model unless you are chasing a model-specific issue
 
+An extension slash command runs headlessly too: `pi -ne -e <path>/src/index.ts -p "/anthropic-auth:status"` prints whatever the handler sends to `console.log` (Refs #80).
+
 ### 2. Check version alignment first
 
 Before trusting a repro, confirm the installed CLI version:

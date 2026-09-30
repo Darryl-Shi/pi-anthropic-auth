@@ -3,7 +3,7 @@ import { describe, test } from "vitest";
 import type { PiAiNamespace } from "#src/host-transport";
 import { pickAnthropicStreamSimple } from "#src/host-transport";
 
-// Guards that the compat entrypoint — which the host loader aliases both the
+// Guards that the compat entrypoint — which the host loader maps both the
 // bare `@earendil-works/pi-ai` specifier and the `/compat` subpath to on
 // 0.80.x — exposes a usable Anthropic transport.  `resolveBuiltinAnthropic‑
 // StreamSimple` imports `/compat` directly (the path pi's own

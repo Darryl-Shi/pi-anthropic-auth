@@ -127,7 +127,7 @@ pi 0.86.0's `ctx.modelRegistry.streamSimple()` later gave foreign callers a supp
 This repo keeps shaping at the registry transport and only hardens how it obtains the built-in delegate.
 `src/host-transport.ts` was switched from `import.meta.resolve` (plus filesystem resolution) to an explicit `@earendil-works/pi-ai/compat` subpath import, reading the non-deprecated `anthropicMessagesApi().streamSimple` factory.
 It originally also fell back to the deprecated `streamSimpleAnthropic` alias for older hosts; that branch was removed as unreachable at the `>=0.80.8` floor, since the factory has shipped from the compat entrypoint since pi v0.80.0 (Issue [#54]).
-The `/compat` subpath is used rather than the bare root — the loader aliases both to the same compat entrypoint, but `/compat` names the surface actually depended on and matches pi's own example.
+The `/compat` subpath is used rather than the bare root — the loader maps both to the same compat entrypoint, but `/compat` names the surface actually depended on and matches pi's own example.
 This fixes Issue [#31] across Node installs and the Bun-compiled binary for the current pi generation.
 
 This still depends on the compat surface, which `compat.ts` says is deleted with the ModelManager migration, so `src/host-transport.ts` carries a compat-removal watch pointing at this record and the upstream brief.

@@ -22,4 +22,20 @@ The operator chose to port the killing-mutation workflow (`/tdd-plan` becomes re
 - Tidy-First assessment skipped: no `src/`/`test/` file changes.
 - No follow-up issues filed; `/audit-agent-docs` is an open question, not a named follow-up.
 
+## Stage: Implementation — Build (2026-09-30T05:37:33Z)
+
+### Session summary
+
+Completed all 7 plan steps as 7 `docs:` commits (`d641083`..`20a15f3`), plus one WARN-fix commit (`4f95aca`): the `AGENTS.md` admission test and `/retro` gate, `/plan-issue` and `/tdd-plan` killing-mutation workflow, both agents, both ship prompts, `/pr-review`, and the post-[#76] skill delta.
+Pre-completion reviewer: WARN (two findings, both fixed), then PASS on the delta re-dispatch.
+
+### Observations
+
+- Every splice copied lines out of `/tmp` snapshots of the upstream files at `7b0357d3` by Python (`uplines`/`after`/`replace_line` helpers), so almost no em-dash was typed; every step's rumdl, split-sentence, escape, and form-feed scans stayed clean.
+  The one flagged escape is the intentional `\u2014` inside backticks in the ported `shell-traps` zsh `echo` rule.
+- `uplines` kept upstream's leading indentation, so four inserted list lines in `ship-issue.md` landed double-indented; caught by reading the diff before commit.
+- Deviations: the `AGENTS.md` Project Prompts entry for `tdd-plan` also said red→green→commit and was updated in step 3; upstream's pi-packages killing-mutation example (`resolveBackgroundMode`) was replaced with this repo's `isAnthropicOAuthToken`; the reviewer's sanctioned-reads block had an upstream sentence split across two lines, rejoined; `pr-review.md`'s capability-gate sentence now says steps 3–6.
+- Reviewer warnings (fixed in `4f95aca`): `ship-issue.md` reused `$PLAN` across fresh shells in the co-shipped scan; the reviewer's §2b still derived a `git describe` base ref, which the plan dropped only from §2a.
+  §2b now uses the dispatcher's base ref, with the tag as a fallback.
+
 [#76]: https://github.com/gotgenes/pi-anthropic-auth/issues/76

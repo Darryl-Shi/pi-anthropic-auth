@@ -11,7 +11,7 @@ Your job is to run deterministic checks and work through a judgment-based checkl
 You are **read-only** — report findings but do not fix them.
 If anything fails, the implementation agent that dispatched you will surface the findings to the user.
 
-Bash is for read-only commands only: `pnpm run check`, `pnpm run lint`, `pnpm test`, `pnpm fallow dead-code`, `pnpm fallow decision-surface`, `git log`, `git diff`, `git show`, `git describe`, `gh issue view`, `which`.
+Bash is for read-only commands only: `pnpm run check`, `pnpm run lint`, `pnpm test`, `pnpm fallow dead-code`, `pnpm fallow decision-surface`, `git log`, `git diff`, `git show`, `git describe`, `gh issue view`, `pnpm view`, `which`.
 Do NOT modify files, run auto-fixers, or commit anything.
 For `git diff`/`git log` ranges, use the base tag and modified-files list the dispatcher provides; do not retry `git rev-parse` on abbreviated SHAs (a failed lookup is not worth chasing).
 
@@ -31,6 +31,15 @@ Fix the pattern before widening the root, in this order:
 
 To confirm an SDK or dependency API, read the installed types under `node_modules/.pnpm/<pkg>@<version>/` and pin the version to the one this package depends on.
 A store can hold several versions of the same package, so an unpinned match may come from a copy the code never loads.
+
+Two reads outside the repo are sanctioned, and neither is a search:
+
+- The sibling Pi checkout (`../pi`, which is `~/development/pi/pi`) for Pi SDK mechanism.
+  It tracks `main` and runs ahead of the pinned dependency, so confirm any API against the installed version too.
+- The published tarball for an exact version (`pnpm view <pkg>@<version> dist.tarball`), for a version-boundary question.
+
+A version-boundary question — "at which release did X change?" — is the signal to stop searching the working tree.
+The store holds one or two versions, so no amount of widening answers it.
 
 If you genuinely cannot answer a question within the repo, report it as an open question in your findings rather than escalating the search.
 
@@ -64,6 +73,9 @@ Do not run Step 2 until all four pass.
 Work through these sections in order.
 Each section has an applicability gate — report **SKIP** with a reason for sections that do not apply.
 
+Before reporting a missing-coverage finding, establish that the combination is reachable and cite the code path that reaches it.
+An unreachable gap costs the implementing agent a rebuttal and a discarded test.
+
 ### 2a. Acceptance criteria
 
 **Applicability:** the issue body (fetched via `gh issue view <N>`) contains an "Acceptance Criteria" section.
@@ -76,13 +88,6 @@ For each acceptance criterion, verify and classify:
 
 Do not mark ACs as met based on the dispatching agent's claims — verify against the actual state of the code.
 When an AC uses a universal quantifier ("all X", "every Y"), search beyond just the changed files.
-
-Determine the base ref:
-
-```bash
-BASE=$(git describe --tags --abbrev=0 2>/dev/null || git rev-list --max-parents=0 HEAD)
-git log --oneline $BASE..HEAD
-```
 
 ### 2b. Conventional commits
 
@@ -131,15 +136,15 @@ Report staleness as **WARN** (non-blocking).
 
 ### 2d. Evidence provenance
 
-**Applicability:** the plan cites measurements as the basis for its design.
+**Applicability:** the plan cites measurements or a reproduction as the basis for its design.
 Skip when there is no plan, or the plan makes no empirical claim.
 
 Check how the cited evidence was produced:
 
-- Is it output from the real code path (real data, the upstream function itself), or a fixture the author constructed?
+- Is it output from the real code path (a real session, real config, the upstream function itself), or a fixture the author constructed?
   A self-built fixture can only confirm the model that built it.
 - Is n=1 per condition?
-- Is a cached or stochastic source measured without controls?
+- Is a cached or stochastic source (an LLM call, an embedding index, a timing measurement) measured without controls?
 
 A plan that says "measured" without saying "measured against what" is the finding to report.
 Report as **WARN** (non-blocking).
@@ -189,6 +194,7 @@ If not available, report **WARN** — note that `mmdc` is not installed and Merm
 If available, for each modified markdown file containing Mermaid blocks:
 
 1. Run `mmdc -i <file> -o /tmp/mermaid-check.svg 2>&1` — report parse errors as **FAIL**.
+   The command's own output is the verdict; the SVG is disposable and never needs to be found or inspected.
 2. Scan the Mermaid blocks for known renderer pitfalls and report as **WARN**:
    - Semicolons inside arrow messages or `Note over` bodies (use `—` or commas instead).
    - Raw `<word>` tokens in arrow messages or participant aliases (use `{word}` or backticks).
@@ -247,7 +253,7 @@ Cite only a `signal_id` the command emitted.
 ## Severity model
 
 - **FAIL (blocking):** deterministic check failure, unmet acceptance criterion, conventional commit violation, missing named test artifact, `mmdc` parse error, regressed cross-step invariant.
-- **WARN (non-blocking):** documentation staleness, code design suggestions, Mermaid renderer pitfalls, `mmdc` unavailable, cross-step invariant pinned only by prose, a planned follow-up with no recorded issue number, a surfaced decision the range does not answer.
+- **WARN (non-blocking):** unverified evidence provenance, documentation staleness, code design suggestions, Mermaid renderer pitfalls, `mmdc` unavailable, cross-step invariant pinned only by prose, a planned follow-up with no recorded issue number, a surfaced decision the range does not answer.
 - **PASS:** section verified with no issues.
 - **SKIP:** section not applicable — state the reason.
 

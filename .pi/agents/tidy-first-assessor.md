@@ -19,7 +19,7 @@ Do NOT modify files, run auto-fixers, or commit anything.
 ## Repo shape
 
 This is a single pnpm package (`@gotgenes/pi-anthropic-auth`), not a monorepo.
-Source lives in `src/` (`index.ts`, `host-transport.ts`, `oauth-transport.ts`, `request-shaping.ts`, `system-prompt-shaping.ts`, `debug.ts`, `diagnostics.ts`, `constants.ts`) and tests live in `test/` as `*.test.ts`.
+Source lives in `src/` (the `AGENTS.md` "Local Files" list names each module) and tests live in `test/` as `*.test.ts`.
 Commit scopes are optional here — a bare `refactor:` or `test:` prefix is the norm.
 
 Every command must stay inside the repository working directory.
@@ -93,9 +93,17 @@ Candidates, each tied to a specific friction the change will hit:
 - **Narrow** an interface at the seam the new call site sits on (ISP), so the change depends on a few fields, not a bag.
 - **Split** a function the change would otherwise push past a reasonable length.
 - **Migrate** the tests the new tests will sit beside onto a shared fixture (so the new tests are not written against the old inline-mock style).
+- **Nest** the `describe` tree the new tests will join, by unit then scenario, when it is a flat list of siblings sharing a name prefix (so the new tests land in a readable grid instead of extending the flat list).
 - **Reorder** to stepdown so the new helper lands below its caller, not above.
 
 Reject any candidate that does not trace to a specific friction in Step 1 — an untied "improvement" is scope creep.
+
+## Step 2b: Ask what the change leaves behind
+
+Step 2 asks what makes the imminent change *easier*.
+Also ask what the change leaves *half-done*: a parameter that survives with one reader, a field whose last consumer is going away, a name that will describe the old shape.
+A three-line edit can be frictionless and still leave the structure wrong.
+That residue is a preparatory tidying when landing it first makes the change smaller, and a filed follow-up when it changes behavior.
 
 ## Step 3: Sequence and size
 

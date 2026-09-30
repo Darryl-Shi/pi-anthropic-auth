@@ -1,5 +1,15 @@
 # Changelog
 
+## [3.4.1](https://github.com/gotgenes/pi-anthropic-auth/compare/v3.4.0...v3.4.1) (2026-09-30)
+
+
+### Documentation
+
+* name supportsMidConvoEffort as the managed-effort source of truth ([#82](https://github.com/gotgenes/pi-anthropic-auth/issues/82)) ([f5f9c47](https://github.com/gotgenes/pi-anthropic-auth/commit/f5f9c47a7266b97db5bde713fbddc291c3f8feb5))
+* record claude-sonnet-5-5 accepting cc_version 2.1.280 ([#82](https://github.com/gotgenes/pi-anthropic-auth/issues/82)) ([474285c](https://github.com/gotgenes/pi-anthropic-auth/commit/474285c3a0afbb00c0ecab2ea293b8fd6a1b5731))
+* correct loader modes for the bundled Node distribution ([#82](https://github.com/gotgenes/pi-anthropic-auth/issues/82)) ([ee818cf](https://github.com/gotgenes/pi-anthropic-auth/commit/ee818cf1fde111e4eda75af86470430bfd4b5ff3))
+* finish the loader 'aliases' wording sweep ([#82](https://github.com/gotgenes/pi-anthropic-auth/issues/82)) ([c743201](https://github.com/gotgenes/pi-anthropic-auth/commit/c74320138f176c643774460f9062bb07e2f7e3cc))
+
 ## [3.4.0](https://github.com/gotgenes/pi-anthropic-auth/compare/v3.3.3...v3.4.0) (2026-09-30)
 
 

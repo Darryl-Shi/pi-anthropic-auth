@@ -28,7 +28,7 @@ Before investigating the issue, load skills relevant to the change:
 - Load the `anthropic` skill for package-specific architecture, OAuth compatibility lessons, priorities, and testing context.
 - Load the `colgrep` skill before code exploration — it contains the decision table for when to use semantic search vs. exact grep, which shapes how you approach unfamiliar modules.
 - Load the `code-design` skill for design principles and structural heuristics.
-- Load the `testing` skill if the plan involves test changes or TDD steps, or if investigation will run a disposable spike test.
+- Load the `testing` skill for any plan with TDD steps — its TDD planning rules govern the plan's step sequencing, not just its test content — or if investigation will run a disposable spike test.
 - Load the `markdown-conventions` skill — it contains project-specific rules (one-sentence-per-line, frontmatter schema) that differ from standard markdown conventions.
 - Load the `design-review` skill and run its checklist before finalizing the design for any refactor, extraction, or change to shared interfaces or layer wiring — judge this from the issue, not from a plan that already shows wiring changes.
 - Load the `tidy-first` skill if the change will create or modify `src/`/`test/` files — you will use it after the design is settled to dispatch the Tidy-First assessor, whose recommendations become preparatory steps in the plan's TDD Order (a docs-only or config-only change skips it).
@@ -51,13 +51,24 @@ Before investigating the issue, load skills relevant to the change:
    Note whether each is implemented yet — your plan must say what it depends on vs. defers.
    Then search for open issues the body does **not** reference but that touch the same module or symbol (`gh issue list --state open --search "<symbol>"`) — a sibling issue on the same file changes the framing, and the operator should not have to supply it.
    Sweep open PRs the same way (`gh pr list --state open`) — a third-party PR on the same module often carries a diagnosis the issue omits, and it becomes a close target at ship time.
+   When the diagnosis attributes the defect to an upstream dependency, search that tracker before treating the mechanism as settled (`gh issue list --repo <owner/repo> --state all --search "<mechanism>"`; `earendil-works/pi` for Pi).
+   Verifying the source and verifying the maintainer's posture are different claims.
+   Searching the tracker is not reading the code: when the report blames a named project, read that project's source and the published tarball of the version the reporter ran (`pnpm view <pkg> dist.tarball`).
+   When the design rests on the dependency's internal behavior rather than its API, also read that mechanism in the tracking checkout (`~/development/pi/pi` for Pi) and confirm it is unchanged from the pinned version.
+   The tracker answers the maintainer's posture; the checkout answers whether the code already moved.
 4. Open the source files most relevant to the change and skim them before writing.
 5. When a bug report does not reproduce locally, dispatch `Explore` (`model: "sonnet-5-5"`) for the root-cause hunt instead of running it inline — a hunt that ends in "not determinable from the code" still costs this session's context, and the plan is written right after.
    Verifying a diagnosis the report already supplies (named files, a numbered source trace) is not that hunt — keep it inline, since what it establishes is the design's input.
    A hunt that needs live execution — an authenticated API spike, a CLI repro, a variant table you iterate on — also stays inline; `Explore` is read-only and cannot run it.
+   For any bug report, trace what **triggers** the defect, not only what the defect does: name and cite the code path that changes the input (a cache key, an event, a config re-read).
+   A fix whose trigger is unreachable is dead code, and the trigger is gate substance.
+   When the change edits a shared mutable artifact several parties write — the system prompt string, a global registry, a config file — enumerate the other writers first, including the `@gotgenes/*` extensions in `~/development/pi/pi-packages`.
+   The issue names the collision it noticed, not the ones it did not.
 6. When the plan introduces a public API pattern (package `exports`, `Symbol.for()` accessor, service interface) or agent-facing message formatting (attribution tags, error prefixes, log labels), use colgrep or grep to search the codebase for the established convention and follow it unless there is a documented reason to diverge.
    When a config key or public field names an SDK/domain concept (a tool-call part, event, or content type), use the SDK's own term for it — verify against the SDK types — rather than adopting a term from the issue body verbatim.
    When the change introduces a mechanism a mature ecosystem already standardizes (log redaction, retry/backoff, caching, rate limiting), check what established libraries in that space actually do before building the `ask_user` option set — a set built only from first principles can omit the standard, lowest-maintenance choice.
+   When the plan **removes** an existing repo-wide convention rather than introducing one, find why it was introduced before planning its removal: `git log -S'<literal>'` to the first commit, then read that commit's plan and retro.
+   A rationale that turns out to govern a *different* mechanism belongs in the plan's Non-Goals, or the convention gets restored later on the strength of the same memory.
 7. Determine the issue's **release recommendation** from the architecture roadmap, if it is part of one.
    Grep `docs/architecture.md` for the step that references this issue (`(#$1)` / `[#$1]`) and read its `Release:` tag (defined by the `improvement-discovery` skill):
    - `Release: independent` (or no tag, or the issue is not in any roadmap) → **ship independently**.
@@ -88,10 +99,19 @@ Classify whether the change is breaking — independently of whether it is ambig
 A change is breaking if it alters the observable behavior, output shape, or default of existing code or config on upgrade without a user edit.
 A bug fix that changes a default value is breaking, even when the old behavior was wrong.
 If breaking, state it in Goals and use `feat!:`/`fix!:` with a `BREAKING CHANGE:` footer.
+When the change alters a documented contract (an event's timing guarantee, a default, an output shape), state the classification in the gate's substance message even when an ADR already settled it.
+A settled call and an unasked one look identical to the operator.
+
+Classify whether the change contradicts this package's published scope.
+Grep `README.md` and `docs/architecture.md` for Non-Goals and scope-table rows that name the mechanism you are about to change, and read the close comments of any issue or PR they cite.
+A collision found after the design settles can only be argued around; found before the first gate it is one of the gate's options.
 
 Before writing the plan, identify any genuinely ambiguous design choices.
 If there are 1–2 such choices (breaking-vs-non-breaking, result-shape change, fallback semantics, etc.), use the `ask-user` skill once to surface them with a short context summary and concrete options.
 Skip this step if the issue's "Proposed change" section is unambiguous.
+
+For a bug report, the gate's substance leads with the **observed scenario in the affected party's terms** — what the user or parent agent saw, in order — before the code trace that explains it.
+A mechanism-first gate gets bounced for it.
 
 If the issue is third-party (its author is not the gh CLI user, as determined in Gather context), do **not** skip the `ask-user` gate even when the proposed change is unambiguous.
 The ambiguity for a third-party issue is not *how* to build it but *whether* the operator wants it built, and in what form.
@@ -105,15 +125,20 @@ Before an `ask_user` option rests on an upstream symbol, confirm it is exported 
 Before it rests on how third-party extensions call pi, read one real caller (`npm pack <pkg>`) (Refs #53).
 Label every number in an `ask_user` option or the plan's predicted-effect table as measured or estimated.
 Measure when the command runs in under a minute; an inferred number with false precision ("18.0 s → ~18.5 s") sells an option on a benefit the real measurement may refute.
+A qualitative cost claim ("only reformats", "nothing is lost") is measurable too — produce the output and diff it before offering the option.
 When the proposal also has design ambiguities, fold those into the same `ask-user` call.
 Let the operator's answers — not the issue body — drive the plan's Goals and Design Overview.
+
+When the design adopts a mechanism from a third party — an issue body, a comment, or a PR, on any issue whoever filed it — record the `Co-authored-by:` trailer in the plan's TDD Order, resolved to a real line, not an instruction to resolve one.
+A patch set aside for one gap still credits the mechanism the plan keeps, and the implementing session commits without re-reading the issue.
+
+If the issue is a decision-record or ADR issue (its deliverable is a decision, not code), do **not** skip the `ask-user` gate even when a design is already written down.
+The deliberation is the deliverable: existing architecture-doc prose is an input to put to the operator, not a settled spec to transcribe.
+Surface the open parameters (and any the prose treats as closed but the issue's own motivation reopens) for the operator's confirmation before planning.
 
 ## Tidy First assessment
 
 With the design settled and the target files known — but before writing the plan — follow the `tidy-first` skill: dispatch the `tidy-first-assessor` subagent over the `src/`/`test/` files the change will touch, then fold its **Recommended** preparatory refactorings into the plan's TDD Order as `refactor:`/`test:` steps ahead of the work each prepares.
-Make the change easy, then make the easy change.
-The assessment runs in a subagent so the many-files read does not consume this session's context.
-Skip when the change touches no `src/`/`test/` files (the skill's applicability gate) and note the skip.
 
 The assessor reads the real files against your design summary, so treat a structural contradiction it reports — a function that does not exist, an interface with a different shape — as a correction to the design before the plan records it.
 A **count** it reports is a lead, not a finding: re-run the grep before the plan records the number.
@@ -143,6 +168,7 @@ Then an H1 title (e.g., `# <short descriptive title>`) — required by markdownl
 - **Problem Statement** — quote the issue's framing in your own words.
 - **Goals** — bullet list, scoped to this change.
 - **Non-Goals** — explicitly defer anything tangential (sibling issues, follow-ups).
+  A Non-Goal resting on a path being unreachable is a claim about the *current* bound — when the change moves that bound (a budget, a limit, a threshold), re-derive the reachability before writing it.
 - **Background** — relevant existing modules/functions and how they relate.
   Flag any constraint from AGENTS.md that applies.
 - **Design Overview** — decision model, data shapes, separation of concerns, edge cases.
@@ -150,15 +176,19 @@ Then an H1 title (e.g., `# <short descriptive title>`) — required by markdownl
   When the design introduces a new collaborator that multiple consumers will use, sketch the consumer's call site (3–5 lines of pseudocode) to verify the interaction pattern follows Tell-Don't-Ask and Law of Demeter.
   When the design extracts code into a new module, sketch the extracted module's interaction with its upstream dependencies (3–5 lines) to verify it doesn't carry Tell-Don't-Ask violations, output-argument mutations, or reverse-search patterns from the original code.
   Fix upstream API gaps in the plan before planning the extraction.
+  When a step adds an import edge A → B within one directory, confirm B does not already reach A through its own imports — the cycle surfaces only as a `fallow dead-code` `circular-dependencies` failure mid-TDD.
   When a new exported function accepts domain objects, verify the parameter type follows ISP — list which fields the function reads and confirm the type doesn't carry unused fields.
   When the plan consolidates code from multiple methods into a shared helper, verify the methods have the same lifecycle semantics — different guards, cleanup scopes, or shutdown-vs-normal-operation contexts indicate structural duplication that should not be extracted.
   When the design has N sibling call sites each supply the same derived fact, check whether a shared downstream point already stamps per-call fields (a runner, a writer, a factory) — a fact every sibling merely relays belongs there, not in N places.
   When the issue proposes moving or relocating a class to a new owner, list every method's callers and what fields/state each method touches.
   If most methods operate on the target owner's fields, the class may be an intermediary that should be dissolved into the owner rather than relocated intact.
+  When the design replaces the evidence a guard reads (a scan swapped for a subscription, polling for an event), enumerate both directions: what the new source sees that the old missed, **and** what the old source saw that the new one misses.
+  A universal claim about the new source ("every path emits X") is the one to verify before it justifies dropping a fallback.
 - **Module-Level Changes** — file-by-file list of what's added, changed, or removed.
   When a step removes or renames an export, grep all `src/` and `test/` files — plus `AGENTS.md` and `.pi/skills/anthropic/SKILL.md`, which document package internals — for every removed symbol before finalizing the file list.
   When the removed export is a public or cross-extension API surface (a `package.json` `exports` re-export, an event channel, a `Symbol.for()` accessor), also grep the whole `docs/` tree and `README.md` — user-facing docs reference a public mechanism by name, not just `docs/architecture.md`.
   When a step reworks the documented behavior of a mechanism rather than removing a symbol (e.g. a patch description, an architecture note, or wording like "prepends" → "includes"), also grep `AGENTS.md` and `.pi/skills/anthropic/SKILL.md` for the mechanism name — reworded prose carries no removed symbol to match.
+  A diagram is prose too: when a step changes a control flow or call order, read `docs/architecture.md`'s Mermaid blocks — a node label models the mechanism without naming the symbol, so the symbol grep cannot see it.
   When a step renames a heading, anchor, or named concept another doc may cite as an example (not just a source symbol), widen the skill grep to the whole `.pi/skills/` tree — a shared skill (`improvement-discovery`, `code-design`) can name a doc's section by heading, and `anthropic` alone misses it.
   When a step resequences or reworks a documented workflow or step-order, grep the edited file itself (not only sibling docs) for other passages describing the same sequence — a prompt or skill often states its workflow twice (a narrative list plus an Output-format section), and editing one leaves the other stale.
   When Design Overview names more than one stale claim, grep once per claim using that claim's own vocabulary — distinct claims rarely share keywords.
@@ -179,36 +209,54 @@ Then an H1 title (e.g., `# <short descriptive title>`) — required by markdownl
   When a step tightens an **optional** interface field to required (drops `| undefined`), grep the exact `<field>: undefined` literal across all `test/` files — an incidental fixture sets the field to `undefined` without ever reading it, so a grep for the field's *use* sites under-catches.
   When a step adds a **new required** field to a shared interface, grep for constructors of that type — inline object literals and shared test factories — not its use sites.
   The field never existed, so the grep above has no `<field>: undefined` literal to match; a shared test fixture is the common miss.
+  When a step adds an **optional** field to an object a `src/` function *produces*, grep `test/` for exact-equality assertions on it (`toEqual`, `toHaveBeenCalledWith`) — optionality satisfies `tsc` and does not satisfy an exact assertion, so a "no construction site breaks" prediction misses them.
+  When the design predicts a file will **not** change despite being in the blast radius, list it with that prediction and the claim it rests on.
+  A predicted-unchanged file is a falsifiable claim; an omitted one is invisible.
 - **Test Impact Analysis** — for extraction and refactoring issues: (1) what new unit tests does the extraction enable that were previously impossible or impractical?
   (2) what existing tests become redundant with the new lower-level tests, and can they be simplified or removed?
   (3) which existing tests must stay as-is because they genuinely exercise the layer being extracted?
+  For a prompt or skill change, the shell commands the new text prescribes are its testable surface: dry-run each at planning time and record the expected output, so `/build-plan` can re-run them as verification.
+  When the plan introduces a parser or matcher, its testable surface is the input domain rather than the inputs you can picture.
+  Run the candidate over every real sample available, and include this repo's own authoring conventions among the shapes it must survive, such as `markdown-conventions`' four-backtick fence.
+  When a prototype exists, run each case and killing mutation the TDD Order names through it, and record the outcome it produced rather than the one you expect.
+  When the change's goal is a token's **absence** from output, apply that predicate to every literal the plan specifies, and assert it across the whole variant set rather than one example.
 - **Invariants at risk** — when the change touches a surface a prior phase step already refactored, list that step's documented invariants (the architecture roadmap's `Outcome:`/`Landed:` bullets) and name the test that pins each — add a test if the invariant lives only in prose.
+  Open each test you name — a file that mocks the layer under test pins nothing about it.
   A later step must not regress an earlier step's outcome with a green suite.
   When an invariant is quantitative (a byte-identical prefix, a token budget, a cache or latency characteristic), measure the baseline and predict the post-change value at planning time.
   A prose argument that the change is "at the tail" or "negligible" is not evidence, and a test pinning adjacent content does not pin the number.
+  An invariant discharged by "no input of this shape exists" is unproven — a corpus bounds observed frequency, not reachability, so enumerate the mechanism's inputs instead.
   For a timing baseline take the median of three runs; a single sub-second sample is noise.
   Counts (tests, call sites, clones) need one run.
   When the plan removes the mechanism an existing test's comment credits, spike the removal and run that test at planning time — that the test stays green is a measurement, not an argument.
-- **TDD Order** — numbered red→green→commit cycles.
+  Name the constituency each invariant serves and confirm it still holds for them — an invariant can be dead for one consumer and load-bearing for another, and a design that improves the loudest one regresses the original.
+- **TDD Order** — numbered red→green→verify→commit cycles.
   Each item names the test surface, what's covered, and the suggested commit message (`test:`, `feat:`, `feat!:`, `fix:`, `docs:`).
-  The Tidy-First assessment's accepted preparatory refactorings are steps here like any other, each with its `refactor:`/`test:` commit message and a sentence naming the friction it prepares.
-  Place each one before the step it prepares — leading the whole order when every later step depends on it, immediately before the relevant part when a larger plan needs its tidying split across several points.
-  The implementing session executes them in order; it runs no second assessment.
+  A suggested `feat:`/`fix:` subject names the observable outcome, not the seam it edits — it ships to the changelog verbatim.
+  Type each step by what a user can observe once it lands: a step that adds a module no consumer references yet is `refactor:`, not `feat:`, so `cliff.toml` skips it and the change reaches the changelog once, on the step that wires it up.
+  Each item that adds tests also names its **killing mutation**: the one-line change to the code under test that must turn the step's new tests red.
+  Write it as an edit a reader could apply ("make `isAnthropicOAuthToken` return `true` unconditionally"), not as a description of intent.
+  This is where a test's discriminating power is cheapest to specify — stating it forces you to name the signal that distinguishes the step's two outcomes, which is the check that catches an assertion passing under both.
+  When a step's tests span several equivalence classes, name one mutation per class and say which tests each should kill; a mutation that leaves a test green is a finding only when the plan predicted otherwise.
+  When a step **moves** an existing registration or call site rather than adding one, name a mutation that deletes it at the new site — a relocated line is as unpinned there as at its old one.
+  When a change has a mechanism half and a data half — a walker plus its lookup table, a parser plus its keyword list — sequence them as separate steps.
+  They have different failure rates and different verification instruments, and fusing them makes every data defect re-review the mechanism.
+  When the data is a table of external facts, write the check that verifies one row before writing the rows.
+  When the plan introduces a new mutable field, specify its whole lifecycle — set, cleared, read — in one step's description rather than one transition per step.
+  Two steps that each name a different transition read correctly alone and can still contradict each other, which only execution reveals.
   When a refactor replaces a type, interface, or function that a large test file depends on, use lift-and-shift: introduce the new thing alongside the old, migrate callers and fixtures incrementally across steps, then remove the old in a final step.
   Never plan a single step that requires rewriting an entire large test file at once.
-  When a step removes a factory or export that has a single call site (e.g., `index.ts`), include the call-site update in the same step — the type checker will not allow them in separate commits.
   When a step removes an export (not just renames it), every importing module and its tests break at the type level in that commit — fold the extraction, all consumer updates, and all consumer-test updates into one step regardless of call-site count.
   When a step removes fields from an interface and a downstream file constructs an object literal satisfying that interface, include the call-site update in the same step — TypeScript's excess property checking rejects the stale fields immediately.
-  When a step adds a module no consumer references yet, suggest `refactor:`, not `feat:` — `cliff.toml` skips `refactor:`, so the changelog carries one entry for the change instead of two.
 - **Risks and Mitigations** — concrete risks and how the plan addresses each.
+  When a risk asserts what happens if a mechanism is **absent**, spike its removal — a spike that exercises the mechanism present verifies the happy path, not the risk.
 - **Open Questions** — defer-until-needed items.
-
-If the change is breaking, say so explicitly in Goals and use `feat!:` in the suggested commit messages.
 
 ## File follow-up issues
 
 If planning identified work to defer to a separate issue (a follow-up named in Design Overview, Non-Goals, or Open Questions), create it now with `gh issue create` — before the plan commit, while this session holds full context.
 Record each new issue number in the plan's Non-Goals / Open Questions.
+Take that number from `gh issue create`'s output, and resolve any SHA the issue body cites with `git rev-parse` — a number or hash authored into the draft is wrong by whatever landed since.
 File nothing speculative — only follow-ups the plan concretely names.
 
 ## Commit
@@ -262,7 +310,6 @@ Before stopping, persist planning observations for cross-session continuity:
 4. Commit: `git add <retro-file> && git commit -m "docs(retro): add planning stage notes for issue #N"`.
 
 Wrap code identifiers, filenames, and text containing underscores in backticks in the retro file.
-Append with the `Edit` tool (or `Write` for a new file), not a shell heredoc.
 When appending a new stage to an existing retro, anchor the `Edit` on the file's last line or use `Write` with the full content — the repeated `### Observations` / `### Session summary` headers make header-anchored edits ambiguous.
 
-Then print a 5-line summary of the plan's key decisions and stop.
+Then print a 5-line summary of the plan's key decisions, end with the next command (`/tdd-plan` or `/build-plan`) on its own line, and stop.

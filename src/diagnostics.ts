@@ -64,7 +64,31 @@ export interface AccountsReport {
 }
 
 /** The argument that opts the report in to identifying fields. */
-export const ACCOUNT_ARGUMENT = "--account";
+const ACCOUNT_ARGUMENT = "--account";
+
+/** An argument completion, structurally Pi's `AutocompleteItem`. */
+interface ArgumentCompletion {
+  value: string;
+  label: string;
+  description: string;
+}
+
+/**
+ * Argument completions for the status command: `--account` while the typed
+ * prefix still matches it, otherwise none.
+ */
+export function statusArgumentCompletions(
+  argumentPrefix: string,
+): ArgumentCompletion[] | null {
+  if (!ACCOUNT_ARGUMENT.startsWith(argumentPrefix.trim())) return null;
+  return [
+    {
+      value: ACCOUNT_ARGUMENT,
+      label: ACCOUNT_ARGUMENT,
+      description: "Also show each account's email and organization name",
+    },
+  ];
+}
 
 /**
  * Returns a compact multi-line diagnostics report suitable for display in a

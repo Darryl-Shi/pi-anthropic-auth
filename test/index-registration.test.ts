@@ -161,6 +161,9 @@ function lazyStubStreamSimple(
 
 type CapturedCommand = {
   description?: string;
+  getArgumentCompletions?: (
+    argumentPrefix: string,
+  ) => { value: string; label: string; description?: string }[] | null;
   handler: (args: string, ctx: StatusCommandContext) => Promise<void>;
 };
 
@@ -221,10 +224,7 @@ function createFakePi(): {
       }
       registrations.set(name, merged);
     },
-    registerCommand(
-      name: string,
-      options: { description?: string; handler: CapturedCommand["handler"] },
-    ): void {
+    registerCommand(name: string, options: CapturedCommand): void {
       commands.set(name, options);
     },
     on(event: string, handler: SessionStartHandler): void {
@@ -283,11 +283,11 @@ function createSessionContext(
  * A headless status command context.  No provider has a credential, so the
  * account lookups never reach the network.
  */
-function createCommandContext(): StatusCommandContext {
+function createCommandContext(apiKey?: string): StatusCommandContext {
   return {
     hasUI: false,
     ui: { notify: vi.fn() },
-    modelRegistry: { getApiKeyForProvider: () => Promise.resolve(undefined) },
+    modelRegistry: { getApiKeyForProvider: () => Promise.resolve(apiKey) },
   };
 }
 
@@ -719,5 +719,75 @@ describe("index registration: diagnostics command", () => {
     assert.match(report, /src[/\\]index\.ts/);
     // Transport resolved marker
     assert.match(report, /resolved/i);
+  });
+
+  test("anthropic-auth:status reports the account behind an OAuth login", async () => {
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const fetchMock = vi.fn((_input: string, _init?: RequestInit) =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            account: { email: "person@example.com" },
+            organization: {
+              organization_type: "claude_max",
+              has_extra_usage_enabled: false,
+            },
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    onTestFinished(() => {
+      consoleSpy.mockRestore();
+      vi.unstubAllGlobals();
+    });
+
+    const { default: registerExtension } = await import("#src/index");
+    const { pi, commands } = createFakePi();
+    await registerExtension(pi);
+    await commands
+      .get("anthropic-auth:status")
+      ?.handler("--account", createCommandContext(OAUTH_TOKEN));
+
+    assert.equal(fetchMock.mock.calls.length, 1);
+    const [report] = consoleSpy.mock.calls[0];
+    assert.match(
+      report,
+      /\n {2}accounts:\n {4}anthropic: person@example\.com, claude_max, extra usage off$/,
+    );
+  });
+
+  describe("anthropic-auth:status argument completions", () => {
+    async function completions(prefix: string) {
+      const { default: registerExtension } = await import("#src/index");
+      const { pi, commands } = createFakePi();
+      await registerExtension(pi);
+      const complete = commands.get(
+        "anthropic-auth:status",
+      )?.getArgumentCompletions;
+      assert.ok(complete, "the command must offer argument completions");
+      return complete(prefix);
+    }
+
+    test("offers --account for an empty prefix", async () => {
+      const items = await completions("");
+      assert.deepEqual(
+        items?.map(({ value }) => value),
+        ["--account"],
+      );
+    });
+
+    test("offers --account for a matching prefix", async () => {
+      const items = await completions("--acc");
+      assert.deepEqual(
+        items?.map(({ value }) => value),
+        ["--account"],
+      );
+    });
+
+    test("offers nothing for a prefix that does not match", async () => {
+      assert.equal(await completions("--verbose"), null);
+    });
   });
 });

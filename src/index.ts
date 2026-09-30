@@ -6,6 +6,7 @@ import {
 import {
   createStatusCommandHandler,
   type ExtensionDiagnostics,
+  statusArgumentCompletions,
 } from "./diagnostics";
 import {
   globalConfigPath,
@@ -144,10 +145,14 @@ export default async function (pi: ExtensionAPI): Promise<void> {
   // The /anthropic-auth:status command surfaces the loaded version, module
   // path, transport resolution result, and shaped providers so users can
   // confirm the extension is actually loaded, from which install location,
-  // and which providers it covers.
+  // and which providers it covers.  It also looks up the Anthropic account
+  // behind each shaped provider's OAuth login, so users with several logins
+  // can tell them apart (Issue #80).  The email and organization name appear
+  // only with `--account`, because users paste this report into issues.
   pi.registerCommand("anthropic-auth:status", {
     description:
-      "Show pi-anthropic-auth diagnostics: version, loaded module path, transport status, and shaped providers.",
+      "Show pi-anthropic-auth diagnostics: version, loaded module path, transport status, shaped providers, and each provider's subscription (--account adds email and organization).",
+    getArgumentCompletions: statusArgumentCompletions,
     handler: createStatusCommandHandler(readDiagnostics),
   });
 }

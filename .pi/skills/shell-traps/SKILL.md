@@ -16,6 +16,7 @@ The zsh facts every session needs (no word-split of an unquoted parameter, `=wor
 Each `bash` call runs in a fresh shell — a variable set in one call is unset in the next.
 Chain producer and consumer in one call, or re-derive the value.
 Pass file tool paths repo-relative (`src/x.ts`), not hand-built absolute ones — a mistyped absolute path fails confusingly instead of fast, and trips pi-permission-system's `external_directory` gate when that extension is installed.
+The zsh `echo` decodes backslash escapes (`\u2014` prints an em-dash; `bash` and `dash` print it literally), so it misreports a file's literal escape text; print bytes with `print -r --`, `printf '%s\n'`, or `sed -n`.
 
 ## Bodies with backticks
 

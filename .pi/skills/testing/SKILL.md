@@ -74,6 +74,7 @@ Load this skill when writing, debugging, or planning tests.
   Prove a pin by mutation: change each value the assertion reads, one at a time, and confirm a distinct failure message.
   Use one probe per assertion *clause*, not per input — five probes against `indexOf` left an adjacent `startsWith` clause unexercised (Refs #52).
 - A mutation is scoped to one claim, so it kills one equivalence class and no more — "I mutated and saw reds" is not evidence the whole set is sound.
+- Confirm a mutation applied (`git diff --stat`) before reading its run — a scripted `perl -pi` on a regex literal can match nothing, and the green then reads as a surviving mutation.
 - When the code under test accepts two shapes of the same input (an ordinal or an issue number, a string or an array), check that the fixtures do not all pick one shape.
   The live input can exercise the other arm exclusively.
 - A bulk red caused by a signature change masks per-test probe quality.
@@ -84,6 +85,7 @@ Load this skill when writing, debugging, or planning tests.
   A `win32PathFlavor` probe on `/tmp/logs/` passes pre-fix on POSIX CI — the host `sep` is `/` too; a native `c:\dir\file.ts` collapses to `./*` and goes red.
 - An equivalence test (incremental vs. freshly built, cached vs. uncached) pins self-consistency, not correctness, when both sides run the code under test.
   Assert independently — a count, a golden row — anything the equivalence cannot see.
+- When a plan names an external oracle (the parse of an equivalent spelling the change must match), sweep it combinatorially over the input's operators, not by hand-picked rows.
 - Prefer a concrete test asserting current (even imperfect) behavior over `test.todo`.
   A real assertion documents the limitation and lets a future fix flip the expectation.
 - When a test reveals a pre-existing bug rather than a wrong assumption, use `test.fails` to document the expected behavior and file a GitHub issue.
@@ -121,10 +123,14 @@ A missing export throws `is not a function` at runtime but surfaces as `TS2305` 
 
 - Run a single file: `pnpm test <test-path>`.
 - Run the full suite: `pnpm test`.
+- Run Vitest bare — no `| tail`, `| grep`, or `>/tmp/…` redirect.
+  Its non-TTY summary is already short (measured: 10 lines for this repo's 234-test suite), and a pipe replaces Vitest's exit status with the filter's, so a failing run reads as a pass.
+  A failing run adds one `×` line per failing test and about 20 lines of assertion detail per failure; that detail is the signal, so narrow the run instead of the output: pass the test path, and `-t "<name>"` for one test.
+- Pair a run with the typecheck using `&&`: `pnpm test <test-path> && pnpm run check` keeps both exit statuses and skips `check` when a test fails.
 - When a fix changes shared helper functions, run the full suite before committing — not just the directly affected test file.
 - A disposable spike test's `console.log` is hidden by Vitest's default reporter; run it with `pnpm test <test-path> --reporter=verbose` (measured: `--silent=false` alone does **not** surface it, and `--reporter=basic` was removed in Vitest 4).
   Write findings to a file (`appendFileSync("/tmp/out.txt", …)`) when the output must outlive the run.
-- When a full-suite run reports a failure, re-run the failing file alone (`pnpm test <test-path>`) and read the unfiltered `tail` — a `grep`/`sed` filter over Vitest output often matches nothing and prints empty, which reads as "no failure" rather than "wrong filter".
+- When a full-suite run reports a failure, re-run the failing file alone (`pnpm test <test-path>`), unpiped — a `grep`/`sed` filter over Vitest output often matches nothing and prints empty, which reads as "no failure" rather than "wrong filter".
 
 ## Operator semantics
 

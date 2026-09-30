@@ -77,6 +77,7 @@ The user can decide whether to address warnings before running `/ship-issue`.
 
 When a WARN names stale references to a deleted symbol or module, grep the flagged file (and its sibling docs) exhaustively for every instance of that symbol before fixing — fixing only the named instances invites a second WARN round.
 After fixing WARN findings, re-dispatch scoped to the **delta** — name the new commits and the rounds already reviewed, as the FAIL path does.
+A delta dispatch never states the dispatcher's own check results; a reviewer handed "green at <sha>" reports it instead of running its Step 1.
 
 ### Overall: FAIL
 

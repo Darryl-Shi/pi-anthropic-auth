@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.4.0](https://github.com/gotgenes/pi-anthropic-auth/compare/v3.3.3...v3.4.0) (2026-09-30)
+
+
+### Features
+
+* show per-provider subscription info in /anthropic-auth:status ([#80](https://github.com/gotgenes/pi-anthropic-auth/issues/80)) ([2a522c7](https://github.com/gotgenes/pi-anthropic-auth/commit/2a522c7d99a192a98f69c166fb35252694d28b4b))
+* offer --account completion for /anthropic-auth:status ([ed8864d](https://github.com/gotgenes/pi-anthropic-auth/commit/ed8864db4e1d371ee82ee0a6db4439fad4bab969))
+
+### Documentation
+
+* document status account lines and --account ([#80](https://github.com/gotgenes/pi-anthropic-auth/issues/80)) ([ebbc2df](https://github.com/gotgenes/pi-anthropic-auth/commit/ebbc2df6fe4d613f7cf5af6c4724cf39109dbc32))
+
 ## [3.3.3](https://github.com/gotgenes/pi-anthropic-auth/compare/v3.3.2...v3.3.3) (2026-09-29)
 
 

@@ -16,6 +16,19 @@ const SAMPLE: ExtensionDiagnostics = {
   configWarnings: [],
 };
 
+/** A status command context with no UI unless overridden. */
+function createStatusContext(
+  overrides: {
+    hasUI?: boolean;
+    notify?: StatusCommandContext["ui"]["notify"];
+  } = {},
+): StatusCommandContext {
+  return {
+    hasUI: overrides.hasUI ?? false,
+    ui: { notify: overrides.notify ?? vi.fn() },
+  };
+}
+
 describe("createStatusCommandHandler", () => {
   const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
@@ -25,10 +38,7 @@ describe("createStatusCommandHandler", () => {
 
   test("calls ctx.ui.notify with the report and 'info' when hasUI is true", async () => {
     const notify = vi.fn();
-    const ctx: StatusCommandContext = {
-      hasUI: true,
-      ui: { notify },
-    };
+    const ctx = createStatusContext({ hasUI: true, notify });
     const handler = createStatusCommandHandler(() => SAMPLE);
     await handler("", ctx);
     assert.equal(notify.mock.calls.length, 1);
@@ -39,10 +49,7 @@ describe("createStatusCommandHandler", () => {
   });
 
   test("calls console.log with the report when hasUI is false", async () => {
-    const ctx: StatusCommandContext = {
-      hasUI: false,
-      ui: { notify: vi.fn() },
-    };
+    const ctx = createStatusContext();
     const handler = createStatusCommandHandler(() => SAMPLE);
     await handler("", ctx);
     assert.equal(consoleSpy.mock.calls.length, 1);
@@ -52,10 +59,7 @@ describe("createStatusCommandHandler", () => {
 
   test("does not call ctx.ui.notify when hasUI is false", async () => {
     const notify = vi.fn();
-    const ctx: StatusCommandContext = {
-      hasUI: false,
-      ui: { notify },
-    };
+    const ctx = createStatusContext({ notify });
     const handler = createStatusCommandHandler(() => SAMPLE);
     await handler("", ctx);
     assert.equal(notify.mock.calls.length, 0);
@@ -67,7 +71,7 @@ describe("createStatusCommandHandler", () => {
     let current = SAMPLE;
     const handler = createStatusCommandHandler(() => current);
     current = { ...SAMPLE, version: "9.9.9" };
-    await handler("", { hasUI: false, ui: { notify: vi.fn() } });
+    await handler("", createStatusContext());
     const [message] = consoleSpy.mock.calls[0];
     assert.match(message, /9\.9\.9/);
   });

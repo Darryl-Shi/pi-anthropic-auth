@@ -279,6 +279,11 @@ function createSessionContext(
   };
 }
 
+/** A headless status command context. */
+function createCommandContext(): StatusCommandContext {
+  return { hasUI: false, ui: { notify: vi.fn() } };
+}
+
 function samplePayload() {
   return {
     model: "claude-haiku-4-5",
@@ -496,7 +501,7 @@ describe("index registration: extra providers named in the global config", () =>
     await registerExtension(pi);
     await commands
       .get("anthropic-auth:status")
-      ?.handler("", { hasUI: false, ui: { notify: vi.fn() } });
+      ?.handler("", createCommandContext());
 
     const [report] = consoleSpy.mock.calls[0];
     assert.match(report, /shaped providers: anthropic, anthropic-2 \(global\)/);
@@ -622,7 +627,7 @@ describe("index registration: the project config at session start", () => {
     );
     await commands
       .get("anthropic-auth:status")
-      ?.handler("", { hasUI: false, ui: { notify: vi.fn() } });
+      ?.handler("", createCommandContext());
 
     const [report] = consoleSpy.mock.calls[0];
     assert.match(
@@ -697,10 +702,7 @@ describe("index registration: diagnostics command", () => {
     const command = commands.get("anthropic-auth:status");
     assert.ok(command, "command must be registered before invoking handler");
 
-    await command.handler("", {
-      hasUI: false,
-      ui: { notify: vi.fn() },
-    });
+    await command.handler("", createCommandContext());
 
     assert.equal(consoleSpy.mock.calls.length, 1);
     const [report] = consoleSpy.mock.calls[0];

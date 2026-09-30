@@ -15,7 +15,8 @@
 // models.
 //
 // Known floors: claude-fable-5-1 requires >= 2.1.251; claude-opus-5-5
-// requires >= 2.1.280.
+// requires >= 2.1.280.  claude-sonnet-5-5 accepts 2.1.280 with no rejection
+// (measured live on pi 0.99.1; no floor named).
 // ---------------------------------------------------------------------------
 
 /**

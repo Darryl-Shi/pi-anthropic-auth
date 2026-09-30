@@ -45,18 +45,22 @@ export interface StatusCommandContext {
  */
 export function formatDiagnosticsReport(d: ExtensionDiagnostics): string {
   const transport = d.transportResolved ? "resolved" : "not resolved";
-  const shaped = [
-    "anthropic",
-    ...d.shapedProviders.map(({ name, layer }) => `${name} (${layer})`),
-  ];
   return [
     "pi-anthropic-auth diagnostics",
     `  version: ${d.version}`,
     `  module:  ${d.modulePath}`,
     `  built-in Anthropic transport: ${transport}`,
-    `  shaped providers: ${shaped.join(", ")}`,
+    formatShapedProviders(d.shapedProviders),
     ...formatConfigWarnings(d.configWarnings),
   ].join("\n");
+}
+
+function formatShapedProviders(providers: readonly ShapedProvider[]): string {
+  const shaped = [
+    "anthropic",
+    ...providers.map(({ name, layer }) => `${name} (${layer})`),
+  ];
+  return `  shaped providers: ${shaped.join(", ")}`;
 }
 
 function formatConfigWarnings(warnings: readonly string[]): string[] {
@@ -77,12 +81,15 @@ export function createStatusCommandHandler(
   readDiagnostics: () => ExtensionDiagnostics,
 ): (args: string, ctx: StatusCommandContext) => Promise<void> {
   return (_args, ctx) => {
-    const report = formatDiagnosticsReport(readDiagnostics());
-    if (ctx.hasUI) {
-      ctx.ui.notify(report, "info");
-    } else {
-      console.log(report);
-    }
+    emitReport(formatDiagnosticsReport(readDiagnostics()), ctx);
     return Promise.resolve();
   };
+}
+
+function emitReport(report: string, ctx: StatusCommandContext): void {
+  if (ctx.hasUI) {
+    ctx.ui.notify(report, "info");
+  } else {
+    console.log(report);
+  }
 }

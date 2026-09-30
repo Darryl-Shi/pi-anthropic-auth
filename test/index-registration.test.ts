@@ -279,9 +279,16 @@ function createSessionContext(
   };
 }
 
-/** A headless status command context. */
+/**
+ * A headless status command context.  No provider has a credential, so the
+ * account lookups never reach the network.
+ */
 function createCommandContext(): StatusCommandContext {
-  return { hasUI: false, ui: { notify: vi.fn() } };
+  return {
+    hasUI: false,
+    ui: { notify: vi.fn() },
+    modelRegistry: { getApiKeyForProvider: () => Promise.resolve(undefined) },
+  };
 }
 
 function samplePayload() {

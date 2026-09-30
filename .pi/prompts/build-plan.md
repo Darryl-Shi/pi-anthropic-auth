@@ -38,17 +38,18 @@ Check whether prior sessions have already done work on this issue:
 1. Extract the issue number from the plan filename (pattern `NNNN-`) or its frontmatter `issue:` field.
 2. Search for an existing retro file: look for `docs/retro/NNNN-*.md` matching the issue number.
 3. If a retro file exists, read it.
-   Prior stage entries contain summaries and observations from earlier sessions (e.g., planning decisions, risks identified, alternatives rejected).
 4. Use this context to inform your work — it may contain warnings about edge cases, decisions that were already debated, or friction points to avoid repeating.
 
 ## Load skills
 
-Before executing the plan, load skills relevant to the change:
+Before executing the plan, load skills relevant to the change.
+Skip any already in this session's context — the trunk flow runs planning, implementation, ship, and retro in one process — but re-load after a compaction, which drops the body while leaving the memory of having read it.
 
 - Load the `anthropic` skill for package-specific architecture, OAuth compatibility lessons, priorities, and testing context.
 - Load the `code-design` skill if the plan touches code.
 - Load the `markdown-conventions` skill if the plan touches markdown or docs.
 - Load the `pre-completion` skill — you will use it after the final step to dispatch the quality reviewer.
+- Load the `edit-tool` skill before a multi-entry `Edit`, a scripted substitution, or a block insertion.
 
 ## Verify green baseline
 
@@ -93,6 +94,10 @@ If the deviation is large, stop and ask.
 Before a decision record narrows or replaces a published contract (an event payload, a wire format, a service method), list that contract's current fields and their stability guarantees.
 A field the record never mentions is a field an implementer drops.
 
+## Filing an issue mid-implementation
+
+When a step surfaces work outside the plan's scope, file it and keep going — do not scope-creep the step.
+
 ## After the last step
 
 1. If any `src/` or `test/` files were touched (even tangentially), run the full suite: `pnpm test`.
@@ -103,6 +108,8 @@ A field the record never mentions is a field an implementer drops.
    Commit any fixup as `style:` if you haven't pushed yet.
 4. If the change corrects a recurring claim or phrasing, grep the repo for the *old* phrasing one final time — a file-by-file review, yours or the reviewer's, misses occurrences a mechanical sweep catches.
 5. If `docs/architecture.md` exists and the issue completes a numbered roadmap step, prefix `✅` on both the step heading and its Mermaid diagram node — a `Landed:` detail line is not a substitute for the `✅`; flip the phase status row only when every step in the phase is done; commit as `docs:`.
+   Confirm both landed before committing: `grep -cE '✅.*#<N>\b' docs/architecture.md` must report 2 — no lint gate sees a missing `✅`.
+   Key it on the issue number, not the step's ordinal: the heading and the node both carry `#<N>` whether the phase identifies its steps by ordinal or by issue.
 6. **Do not edit `CHANGELOG.md`** — the release workflow owns it, and git-cliff generates entries from your Conventional Commit messages on the next release.
 
 ## Pre-completion review

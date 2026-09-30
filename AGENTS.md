@@ -162,7 +162,7 @@ Shared workflow skills (synced from `pi-packages`, adapted to this single packag
 Reusable slash-command flows live in `.pi/prompts/` (synced from `pi-packages`, adapted to this repo):
 
 1. `plan-issue`: read a GitHub issue and write a numbered plan to `docs/plans/`
-2. `tdd-plan`: execute a plan's TDD steps as red→green→commit cycles
+2. `tdd-plan`: execute a plan's TDD steps as red→green→verify→commit cycles
 3. `build-plan`: execute a non-TDD plan (docs/config/prose changes)
 4. `pr-review`: triage a third-party PR (adopt/adapt/decline) and hand off to `plan-issue`
 5. `ship-issue`: push, close the issue, and dispatch the release

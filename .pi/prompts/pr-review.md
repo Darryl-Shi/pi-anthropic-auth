@@ -31,9 +31,12 @@ Stop after recording the decision and handing off; do not start implementation h
    When that base lags `main`, read the change with `gh pr diff $1` or `git diff $(git merge-base main pr-$1) pr-$1`.
    A plain `git diff main` reports every commit `main` gained since the base as a *deletion* by the PR.
 
-A fork PR's workflow runs sit at `action_required` until a maintainer approves them, so `statusCheckRollup` is usually **empty** — absent checks mean *not run*, never *passed*.
-Do not read `mergeable`/`mergeStateStatus` as evidence of a green build.
-Approve the run (`gh api -X POST repos/gotgenes/pi-anthropic-auth/actions/runs/<id>/approve`) or run the checks yourself per the Verify gate below.
+A fork PR's `statusCheckRollup` is often **empty**, for two indistinguishable reasons: the run awaits maintainer approval, or it has not been created yet (~4 minutes on a fork-branch push).
+Absent checks mean *not run*, never *passed*; do not read `mergeable`/`mergeStateStatus` as evidence of a green build.
+Tell them apart with `gh api "repos/gotgenes/pi-anthropic-auth/actions/runs?head_sha=<sha>" --jq .total_count`: `0` is not-yet-created, and an `action_required` run needs `gh api -X POST repos/gotgenes/pi-anthropic-auth/actions/runs/<id>/approve`.
+Call `ci_find` with `timeout: 300` on a fork PR, not the 120 s default.
+An already-approved fork runs later pushes automatically, so do not wait on an approval that is not pending.
+Running the checks yourself per the Verify gate below settles it regardless of which reason applies.
 
 ## Verify the defect (required gate — do this before evaluating the diff)
 
@@ -42,7 +45,7 @@ Most of the cost of a bad review is spent evaluating the implementation of a pro
 Establish the problem is real **on current `main`** before you read the diff for design.
 
 When the PR adds a capability rather than fixing a defect, verify the **capability** instead: confirm the external surface it depends on exists and returns the shape the code assumes (hit the endpoint, run the API, check the upstream symbol).
-Steps 3–5 below still apply; steps 1–2 do not.
+Steps 3–6 below still apply; steps 1–2 do not.
 Skipping this gate because "there is no defect" is not an option.
 
 1. **Reproduce it.**
@@ -61,6 +64,10 @@ Skipping this gate because "there is no defect" is not an option.
 5. **Verify any alternative you propose.**
    An evaluation that names a better seam is a claim about code you have not run.
    Hold it to the same standard as the defect: confirm the alternative's call order and available data in the compiled source before recommending it.
+6. **Read the downstream consumer.**
+   When the report names another project as the failure path — a provider, a bridge, a host harness — read that project before judging the diff: `gh repo clone` it (`~/development/pi/pi` for Pi), then read its `docs/` and the module the report blames.
+   Ask there the same question item 2 asks here: is it already fixed, and does the reporter's version have it?
+   `pnpm view <pkg> dist.tarball` fetches what they actually ran.
 
 Record the outcome of this gate in the evaluation, with the commands and results that back it.
 If the defect is unconfirmed, the `ask-user` decision gate below should offer "ask the reporter for version + fresh repro" as a direction.

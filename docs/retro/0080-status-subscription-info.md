@@ -24,3 +24,19 @@ The issue is third-party, so direction, provider scope, and identity handling we
 #### Deferred tidyings
 
 - `src/oauth-transport.ts`: `isAnthropicOAuthToken` lives in the transport module, so `src/account-profile.ts` importing it pulls in the transport's dependencies; move it to a small token module if a cycle or weight becomes a problem.
+
+## Stage: Implementation — TDD (2026-09-30T03:06:04Z)
+
+### Session summary
+
+Implemented all six plan steps as commits (fixtures, formatter split, `src/account-profile.ts`, the `accounts:` block with `--account`, argument completions, docs), then ran the live check.
+Tests went from 205 to 234 (+29); `check`, `lint`, and `fallow:dead-code` are clean.
+
+### Observations
+
+- Live check needed no interactive session: `pi -ne -e src/index.ts -p "/anthropic-auth:status"` runs the command headlessly, and the output matched the planning measurements on the operator's Max login (plain and `--account`).
+- Deviation: the completions helper lives in `src/diagnostics.ts` as `statusArgumentCompletions`, next to the `--account` constant, rather than inline in `src/index.ts`, so the constant stays module-private.
+- The index-registration account-line test passed at Red, because step 4 had already wired the handler; it was kept as a wiring pin and proven by mutating the handler to ignore `ctx.modelRegistry`.
+- The identity-gating pins in `test/diagnostics.test.ts` were mutation-checked (forcing `includeIdentity` true, and dropping the gate in `describeProfile`).
+- `mockReset` (not `mockClear`) was needed in the diagnostics `beforeEach`, because one test installs a per-provider `mockImplementation`.
+- Pre-completion reviewer: PASS, including an independent re-derivation of the privacy invariant (no email or organization name in the default report for any field combination).

@@ -8,6 +8,21 @@ Project-level reusable workflows belong in `.pi/skills/`, reusable slash-command
 This repo includes repo-specific skills (Anthropic OAuth debugging, Pi CLI repro, frontmatter, upstream watch) plus a shared workflow toolkit (code design, testing, fallow, improvement discovery, pre-completion, shell and edit-tool traps, and others) kept in parity with `~/development/pi/pi-packages/`.
 The Skill Index under Architecture maps each task to the skill to load before it.
 
+## Admission test
+
+This file is loaded into every session; a skill's body is loaded only when read.
+Before adding a passage here, answer three questions in order:
+
+1. Could a current model act correctly without it?
+   If yes, it belongs nowhere.
+2. Is it needed before any workflow step has run, or is it an environment fact no model could infer?
+   If neither, it belongs in the body of the topic skill whose trigger it fires at.
+   Every rule has a loader now; a missing destination is a reason to create one, not to keep the rule here.
+3. Does the rule stand without its incident?
+   If yes, keep the rule and drop the story; a `(Refs #N)` stays only when the issue encodes a constraint a reader may need to trace.
+
+A rule whose incident has not recurred in any recent retro is a delete candidate — guidance, not a verdict, since the rule may be why it has not recurred.
+
 ## Project
 
 ### Overview
@@ -156,7 +171,7 @@ Reusable slash-command flows live in `.pi/prompts/` (synced from `pi-packages`, 
 8. `retro-note`: persist a quick retro observation to `docs/retro/`
 9. `upstream-impact`: assess a new Pi/pi-ai release against the `upstream-watch` assumptions
 
-The fallow-discovery prompts (`plan-improvements`, `finish-phase`) and the worktree flows (`land-worktree`, `ship-worktree`, `triage-backlog`) from `pi-packages` are intentionally not ported.
+The fallow-discovery prompts (`plan-improvements`, `finish-phase`), the `audit-agent-docs` prompt, and the worktree flows (`sync-worktree`, `triage-backlog`) from `pi-packages` are intentionally not ported.
 
 ### Project Agents
 

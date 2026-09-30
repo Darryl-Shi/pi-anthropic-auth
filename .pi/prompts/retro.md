@@ -19,7 +19,8 @@ Before reading anything, make sure the working tree is up to date with the remot
 
 ## Load skills
 
-Before investigating or proposing changes, load skills relevant to the retro:
+Before investigating or proposing changes, load skills relevant to the retro.
+Skip any already in this session's context — the trunk flow runs planning, implementation, ship, and retro in one process — but re-load after a compaction, which drops the body while leaving the memory of having read it.
 
 - Load the `ask-user` skill for the structured clarification flow.
 - Load the `anthropic` skill for package-specific architecture, OAuth compatibility lessons, priorities, and testing context.
@@ -47,6 +48,7 @@ Review what happened across this session — the user prompts, your tool calls, 
 If the retro file already contains stage entries from prior sessions (sections headed `## Stage: <name> (<timestamp>)`), read them as primary context.
 Your synthesis should span all stages — not just this session.
 Look for patterns that recur across stages, friction that compounds, and whether earlier observations led to adjustments.
+When the issue spanned multiple sessions, read the prior stages' transcripts, not only their breadcrumbs: `list_session_files({ cwd })` lists this repo's sessions newest-first (the filename embeds the session id), and `read_session_file({ path })` renders one — repeated friction shows only in the transcript.
 
 Be specific: cite file paths, commit subjects, and concrete tool sequences.
 Categorize each friction point with one label:
@@ -82,8 +84,13 @@ Skip a lens entirely when it finds nothing notable.
 
 1. **Model-performance correlation** — for each subagent dispatch (if any), note which model ran and what task it performed.
    Flag quality mismatches: a reasoning-weak model on judgment-heavy work (architecture decisions, code review), or a high-cost model on purely mechanical work (formatting, simple grep).
-   If the `read_session`, `read_parent_session`, or `read_session_file` tools are available, use them to inspect model assignments: attribute each turn to the inline `[provider/model]` label an **unfiltered** `read_session` call renders on it.
-   A `types: ["model_change"]`-filtered call bypasses that suppression and renders phantom switches that never ran a turn.
+   If the `read_session`, `read_parent_session`, or `read_session_file` tools are available, attribute each turn from the inline `[provider/model]` label the transcript renders on it, in a **type-unfiltered** call.
+   A `types: ["model_change"]`-filtered call bypasses phantom-switch suppression and renders switches that never ran a turn.
+   `offset` and `elide_user_text` are not type filters and are the intended way to run this lens on a long multi-stage session: page backward with `{ limit: N }` then `{ offset: N, limit: N }` rather than re-requesting a larger window, and set `elide_user_text: true` to drop prompt bodies the lens never reads while keeping every label.
+   A rewound session renders only its live path, so the turns the lens counts are the ones that survived; an `[abandoned branch] N entries omitted` line marks each stretch that did not, and `branches: "all"` renders it when the abandoned attempt is itself the subject.
+   `[session] → <name>` lines mark the stage boundaries to attribute each run of turns to.
+   Use `read_session`/`read_session_file`, not `jq` over `$PI_SESSION_FILE`, and never `PI_MODEL`/`PI_PROVIDER`, which report only the session's *current* model and invent an attribution when extrapolated across stages.
+   A subagent's turns live in its own transcript, which `list_subagent_sessions({ path })` finds for a given session file and `read_session_file({ path })` renders — attribute a subagent's model from that transcript rather than from its agent definition, which records the model it was configured with and not the one that ran.
 2. **Escalation-delay tracking** — for each `rabbit-hole` friction point, count how many consecutive tool calls the agent spent on the same error or approach before resolving or changing strategy.
    Flag sequences longer than 5 consecutive tool calls on the same error as "should have dispatched an Explore or Plan subagent" or "should have asked the user."
 3. **Unused-tool detection** — for each `rabbit-hole` or `missing-context` friction point, check whether a subagent type or tool was available that could have helped but was never dispatched.
@@ -94,7 +101,6 @@ Skip a lens entirely when it finds nothing notable.
 ## Step 3 — Write the retro file
 
 Append (or create) `docs/retro/NNNN-<slug>.md` with this structure.
-Author and append the retro file with the `Edit`/`Write` tools, not a shell heredoc.
 When creating a new file, include YAML frontmatter (see the `markdown-conventions` skill § Documentation frontmatter):
 
 ```markdown
@@ -132,7 +138,6 @@ Anchor the `Edit` on the file's last line or use `Write` with the full content �
 The retro file accumulates entries across sessions.
 
 Wrap all code identifiers, filenames, route paths, CLI names, and any text containing underscores in backticks.
-Use sequential numbering in ordered lists.
 
 ## Step 4 — Present highlights and proposals (before asking)
 
@@ -168,10 +173,15 @@ Suggest the user open a GitHub issue and run `/plan-issue` on it.
 Retro-driven additions to `AGENTS.md` and prompt bodies should land as **rule + tight example**, not **rule + rationale + worked example**.
 The retro file is the right home for rationale and worked examples.
 
-Before landing any change, ask:
+First, put each proposed addition to `AGENTS.md`, a skill, a prompt template, or an agent definition through the `## Admission test` in `AGENTS.md`.
+A passage that fails its first question is not landed anywhere; one that fails its second is landed in the named skill's body instead.
+For a template, the second question fails when a skill the template loads already owns the rule — land it there, or nowhere if it is already said.
+For an agent definition, it fails when the child already gets the rule from `AGENTS.md`, its dispatch prompt, or a skill its body tells it to load.
 
-1. **Rationale placement** — is the _why_ in the retro file, or has it leaked into `AGENTS.md`/prompt?
-   If the latter, move it back and leave a one-clause justification (or a `Refs #N` pointer).
+Then, for what passes, ask:
+
+1. **Rationale placement** — is the *why* in the retro file, or has it leaked into `AGENTS.md`/prompt?
+   If the latter, move it back and leave a one-clause justification, with a `Refs #N` pointer only when the issue encodes an active constraint a reader may need to trace.
 2. **Example tightness** — can the example fit in one or two lines?
 3. **Hedging audit** — phrases like "should generally," "typically," "usually" often signal the rule isn't crisp enough.
    Name the exceptions or drop the hedge.
@@ -186,6 +196,7 @@ Do not split this into multiple sections; one coherent list per retro.
 
 1. `git add` the retro file (`docs/retro/`), `AGENTS.md`, `.pi/prompts/`, and any other touched files.
 2. Commit as `docs(retro): add retro notes for issue #N`.
+   Split any `src/` or `test/` change into its own `test:`/`refactor:` commit first — `src/` is inside the release scope, so bundling code under a `docs:` commit cuts a pointless patch release.
 3. `git push`.
 
 If the user suggests further refinements after the commit, implement them, append to the same `### Changes made` section, and commit again.
@@ -204,5 +215,5 @@ If the roadmap queues nothing, say so explicitly.
 - Be conservative — only propose changes clearly justified by evidence in this session.
 - Be specific — provide exact proposed text, not vague suggestions.
 - Look for removals alongside additions.
-- Don't duplicate — check whether a rule already exists in `AGENTS.md` or a prompt before adding.
+- Don't duplicate — check whether a rule already exists in `AGENTS.md`, a skill, or a prompt before adding, and apply the `AGENTS.md` admission test to decide which of those it belongs in.
 - Do not edit `CHANGELOG.md` — the release workflow owns it.

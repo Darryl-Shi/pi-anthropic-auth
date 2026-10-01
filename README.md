@@ -42,6 +42,7 @@ pi -e npm:@gotgenes/pi-anthropic-auth
 ## Usage
 
 1. Run `/login anthropic` as usual — Pi's native Anthropic login flow is preserved.
+   On pi 1.0.0 and later, that includes **Copy code login (headless)**, for when the browser runs on another machine: sign in there, then paste the code Anthropic shows into pi.
 2. Select a Claude Pro/Max model and start chatting. The extension handles compatibility transparently.
 3. API-key behavior is unaffected; the extension's changes apply only to OAuth sessions.
 

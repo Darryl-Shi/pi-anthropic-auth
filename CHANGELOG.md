@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.4.2](https://github.com/gotgenes/pi-anthropic-auth/compare/v3.4.1...v3.4.2) (2026-10-01)
+
+
+### Documentation
+
+* note pi 1.0.0's headless copy-code login in README ([29f99c1](https://github.com/gotgenes/pi-anthropic-auth/commit/29f99c1b2e692465d15f7efc0898e54af558414a))
+
+### Miscellaneous Chores
+
+* bump pi-ai and pi-coding-agent devDependencies to 1.0.0 ([7df1b17](https://github.com/gotgenes/pi-anthropic-auth/commit/7df1b17e0a125276cb72c6032b9d21ca3f53a68c))
+
 ## [3.4.1](https://github.com/gotgenes/pi-anthropic-auth/compare/v3.4.0...v3.4.1) (2026-09-30)
 
 

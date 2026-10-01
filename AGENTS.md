@@ -659,6 +659,7 @@ The repo-level fix is `minimumReleaseAge` in `pnpm-workspace.yaml`, currently 60
 
 A local `--frozen-lockfile` run does not reproduce CI's check: pnpm caches a per-lockfile verdict in `~/.cache/pnpm/lockfile-verified.jsonl`, keyed by hash/path/mtime/inode, which survives deleting `node_modules` and moving the store aside.
 Delete that file first, then look for `Verifying lockfile against supply-chain policies` in the output — without that line, the check did not run.
+When the file is absent (pnpm 11 on macOS kept it nowhere under `~`), a frozen install over an up-to-date `node_modules` still exits early without verifying; delete `node_modules` to force the check.
 
 That full re-resolution also pulls every other devDep forward within its caret range — run `pnpm run lint` before assuming the bump is clean (biome 2.4→2.5 forced a config migration in v2.0.2; 2.5.7→2.5.14 forced a schema migration in #67, and vite 8.2→8.3 made `esbuild` a real dependency needing `allowBuilds`).
 

@@ -10,6 +10,7 @@ const { lookupProviderAccount } = vi.hoisted(() => ({
 
 vi.mock("#src/account-profile", () => ({ lookupProviderAccount }));
 
+import type { AccountPoolEntry } from "#src/account-pool";
 import type { AccountLookup, AccountProfile } from "#src/account-profile";
 import {
   createStatusCommandHandler,
@@ -25,6 +26,7 @@ const SAMPLE: ExtensionDiagnostics = {
   transportResolved: true,
   shapedProviders: [],
   configWarnings: [],
+  accountPool: { entries: [], spareSlot: undefined },
 };
 
 const MAX_PROFILE: AccountProfile = {
@@ -46,6 +48,19 @@ const TEAM_PROFILE: AccountProfile = {
   email: "worker@company.example",
   organizationName: "Company",
 };
+
+function poolEntry(
+  id: string,
+  overrides: Partial<Omit<AccountPoolEntry, "id">> = {},
+): AccountPoolEntry {
+  return {
+    id,
+    usage: null,
+    limitedUntil: null,
+    activeSessions: 0,
+    ...overrides,
+  };
+}
 
 /** A status command context with no UI unless overridden. */
 function createStatusContext(
@@ -120,6 +135,27 @@ describe("createStatusCommandHandler", () => {
       assert.deepEqual(lookupProviderAccount.mock.calls, [
         ["anthropic", ctx.modelRegistry],
         ["anthropic-2", ctx.modelRegistry],
+      ]);
+    });
+
+    test("looks up every pool account once, before shaped providers", async () => {
+      const ctx = createStatusContext();
+      const handler = createStatusCommandHandler(() => ({
+        ...SAMPLE,
+        shapedProviders: [
+          { name: "anthropic-2", layer: "global" },
+          { name: "work", layer: "project" },
+        ],
+        accountPool: {
+          entries: [poolEntry("anthropic"), poolEntry("anthropic-2")],
+          spareSlot: "anthropic-3",
+        },
+      }));
+      await handler("", ctx);
+      assert.deepEqual(lookupProviderAccount.mock.calls, [
+        ["anthropic", ctx.modelRegistry],
+        ["anthropic-2", ctx.modelRegistry],
+        ["work", ctx.modelRegistry],
       ]);
     });
 
@@ -205,6 +241,58 @@ describe("formatDiagnosticsReport", () => {
     });
   });
 
+  describe("account pool", () => {
+    test("reports a single account with the slot that adds another", () => {
+      const report = formatDiagnosticsReport({
+        ...SAMPLE,
+        accountPool: {
+          entries: [poolEntry("anthropic")],
+          spareSlot: "anthropic-2",
+        },
+      });
+      assert.match(
+        report,
+        /^ {2}account pool: anthropic only \(add one with \/login anthropic-2\)$/m,
+      );
+    });
+
+    test("lists each account's usage, rate limit, and active sessions", () => {
+      const report = formatDiagnosticsReport({
+        ...SAMPLE,
+        accountPool: {
+          entries: [
+            poolEntry("anthropic", {
+              usage: {
+                fiveHour: 0.344,
+                sevenDay: 0.12,
+                limited: false,
+                resetsAt: null,
+              },
+              activeSessions: 2,
+            }),
+            poolEntry("anthropic-2", {
+              limitedUntil: Date.UTC(2026, 9, 7, 17, 20, 30),
+              activeSessions: 1,
+            }),
+            poolEntry("anthropic-3", {
+              usage: {
+                fiveHour: null,
+                sevenDay: null,
+                limited: false,
+                resetsAt: null,
+              },
+            }),
+          ],
+          spareSlot: "anthropic-4",
+        },
+      });
+      assert.match(
+        report,
+        /\n {2}account pool: 3 accounts \(add one with \/login anthropic-4\)\n {4}anthropic: 5h 34%, 7d 12%, 2 active sessions\n {4}anthropic-2: usage not yet seen, rate limited until 2026-10-07 17:20Z, 1 active session\n {4}anthropic-3: usage not reported, 0 active sessions$/,
+      );
+    });
+  });
+
   describe("config warnings", () => {
     test("omits the warnings block when there are none", () => {
       const report = formatDiagnosticsReport(SAMPLE);
@@ -252,7 +340,7 @@ describe("formatDiagnosticsReport", () => {
       );
       assert.match(
         report,
-        /shaped providers: anthropic\n {2}accounts:\n {4}anthropic: no OAuth login\n {2}config warnings:/,
+        /shaped providers: anthropic\n {2}account pool: anthropic only\n {2}accounts:\n {4}anthropic: no OAuth login\n {2}config warnings:/,
       );
     });
 

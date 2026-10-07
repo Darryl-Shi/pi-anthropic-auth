@@ -3,6 +3,8 @@ import {
   type ExtensionAPI,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
+import { AccountPool } from "./account-pool";
+import { AccountSlots } from "./account-slots";
 import {
   createStatusCommandHandler,
   type ExtensionDiagnostics,
@@ -75,9 +77,13 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     await resolveBuiltinAnthropicStreamSimple();
 
   // One wrapper instance owns the learned Claude Code floor (Issue #75), so
-  // every provider it is registered on shares that floor.
+  // every provider it is registered on shares that floor.  It also owns the
+  // account pool, which spreads `anthropic` requests across every Claude
+  // account the user has logged in, one account per session.
+  const pool = new AccountPool();
   const streamSimple = createAnthropicOAuthStreamSimple(
     builtinAnthropicStreamSimple,
+    { pool },
   );
 
   // Defensively clear any prior `anthropic` registration before installing our
@@ -121,7 +127,21 @@ export default async function (pi: ExtensionAPI): Promise<void> {
   // provider up per request, so a project provider is shaped from the first
   // request too.  Warnings from both layers are reported here, where a UI is
   // in hand.
+  // Extra accounts are login-only providers (`anthropic-2`, …) whose OAuth
+  // flow is the built-in Anthropic one, so the slots need the registry's
+  // `anthropic` provider and can only be registered once a session exists.
+  // The pool re-reads the slots on each request, so a `/login` made
+  // mid-session joins the pool without a restart.
+  const slots = new AccountSlots(pi);
   pi.on("session_start", (_event, ctx) => {
+    const registry = ctx.modelRegistry;
+    slots.refresh(registry);
+    pool.attach({
+      accounts: () => slots.refresh(registry),
+      getApiKeyForProvider: (provider) =>
+        registry.getApiKeyForProvider(provider),
+    });
+
     if (ctx.isProjectTrusted()) {
       extraProviders.apply(
         loadExtensionConfig(projectConfigPath(ctx.cwd)),
@@ -140,6 +160,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     ...loadDiagnostics,
     shapedProviders: extraProviders.shapedProviders(),
     configWarnings: extraProviders.warnings(),
+    accountPool: { entries: pool.entries(), spareSlot: slots.spare() },
   });
 
   // The /anthropic-auth:status command surfaces the loaded version, module
@@ -151,7 +172,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
   // only with `--account`, because users paste this report into issues.
   pi.registerCommand("anthropic-auth:status", {
     description:
-      "Show pi-anthropic-auth diagnostics: version, loaded module path, transport status, shaped providers, and each provider's subscription (--account adds email and organization).",
+      "Show pi-anthropic-auth diagnostics: version, loaded module path, transport status, shaped providers, the account pool's usage, and each account's subscription (--account adds email and organization).",
     getArgumentCompletions: statusArgumentCompletions,
     handler: createStatusCommandHandler(readDiagnostics),
   });

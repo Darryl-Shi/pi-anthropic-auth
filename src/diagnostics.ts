@@ -1,9 +1,11 @@
+import type { AccountPoolEntry } from "./account-pool";
 import {
   type AccountLookup,
   type AccountProfile,
   lookupProviderAccount,
   type ProviderCredentials,
 } from "./account-profile";
+import type { AccountUsage } from "./account-usage";
 import type { ShapedProvider } from "./extra-provider-shaping";
 
 /**
@@ -27,6 +29,16 @@ export interface ExtensionDiagnostics {
   shapedProviders: readonly ShapedProvider[];
   /** Problems found reading the config files, one line each. */
   configWarnings: readonly string[];
+  /** The Claude accounts `anthropic` requests are spread across. */
+  accountPool: AccountPoolReport;
+}
+
+/** The account pool block of the report. */
+export interface AccountPoolReport {
+  /** Every account in pool order, `anthropic` first. */
+  entries: readonly AccountPoolEntry[];
+  /** The slot `/login` offers for another account, if any. */
+  spareSlot: string | undefined;
 }
 
 /**
@@ -105,6 +117,7 @@ export function formatDiagnosticsReport(
     `  module:  ${d.modulePath}`,
     `  built-in Anthropic transport: ${transport}`,
     formatShapedProviders(d.shapedProviders),
+    ...formatAccountPool(d.accountPool),
     ...formatAccounts(accounts),
     ...formatConfigWarnings(d.configWarnings),
   ].join("\n");
@@ -116,6 +129,51 @@ function formatShapedProviders(providers: readonly ShapedProvider[]): string {
     ...providers.map(({ name, layer }) => `${name} (${layer})`),
   ];
   return `  shaped providers: ${shaped.join(", ")}`;
+}
+
+function formatAccountPool({
+  entries,
+  spareSlot,
+}: AccountPoolReport): string[] {
+  const addHint = spareSlot ? ` (add one with /login ${spareSlot})` : "";
+  if (entries.length < 2) {
+    return [`  account pool: anthropic only${addHint}`];
+  }
+  return [
+    `  account pool: ${entries.length} accounts${addHint}`,
+    ...entries.map((entry) => `    ${entry.id}: ${describePoolEntry(entry)}`),
+  ];
+}
+
+function describePoolEntry(entry: AccountPoolEntry): string {
+  const sessions = `${entry.activeSessions} active ${entry.activeSessions === 1 ? "session" : "sessions"}`;
+  return [
+    describeUsage(entry.usage),
+    entry.limitedUntil === null
+      ? null
+      : `rate limited until ${formatInstant(entry.limitedUntil)}`,
+    sessions,
+  ]
+    .filter((part): part is string => part !== null)
+    .join(", ");
+}
+
+function describeUsage(usage: AccountUsage | null): string {
+  if (usage === null) return "usage not yet seen";
+  const windows = [
+    usage.fiveHour === null ? null : `5h ${formatPercent(usage.fiveHour)}`,
+    usage.sevenDay === null ? null : `7d ${formatPercent(usage.sevenDay)}`,
+  ].filter((part): part is string => part !== null);
+  return windows.length === 0 ? "usage not reported" : windows.join(", ");
+}
+
+function formatPercent(fraction: number): string {
+  return `${Math.round(fraction * 100)}%`;
+}
+
+/** `2026-10-07 17:20Z`: minute precision, UTC, so reports are deterministic. */
+function formatInstant(epochMs: number): string {
+  return `${new Date(epochMs).toISOString().slice(0, 16).replace("T", " ")}Z`;
 }
 
 function formatAccounts(report: AccountsReport | undefined): string[] {
@@ -185,10 +243,13 @@ export function createStatusCommandHandler(
 ): (args: string, ctx: StatusCommandContext) => Promise<void> {
   return async (args, ctx) => {
     const diagnostics = readDiagnostics();
-    const providers = [
-      "anthropic",
-      ...diagnostics.shapedProviders.map(({ name }) => name),
-    ];
+    const providers = Array.from(
+      new Set([
+        "anthropic",
+        ...diagnostics.accountPool.entries.map(({ id }) => id),
+        ...diagnostics.shapedProviders.map(({ name }) => name),
+      ]),
+    );
     // Lookups run in parallel, so the report waits for one round trip.
     const accounts = await Promise.all(
       providers.map(async (provider) => ({

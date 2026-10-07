@@ -6,6 +6,8 @@ import type {
   Api,
   AssistantMessageEventStream,
   Model,
+  OAuthAuth,
+  Provider,
   SimpleStreamOptions,
   TranscriptContext,
 } from "@earendil-works/pi-ai";
@@ -196,6 +198,7 @@ function createFakePi(): {
   commands: Map<string, CapturedCommand>;
   calls: string[];
   registrations: Map<string, ProviderConfig>;
+  nativeRegistrations: Map<string, Provider>;
   dispatch: (
     model: Model<Api>,
     context: TranscriptContext,
@@ -208,13 +211,23 @@ function createFakePi(): {
   // defensive `unregisterProvider` runs before `registerProvider`.
   const calls: string[] = [];
   const registrations = new Map<string, ProviderConfig>();
+  const nativeRegistrations = new Map<string, Provider>();
   const sessionStartHandlers: SessionStartHandler[] = [];
   const pi: ExtensionAPI = {
     unregisterProvider(name: string): void {
       calls.push(`unregister:${name}`);
       registrations.delete(name);
     },
-    registerProvider(name: string, config: ProviderConfig): void {
+    registerProvider(
+      nameOrProvider: string | Provider,
+      config: ProviderConfig,
+    ): void {
+      if (typeof nameOrProvider !== "string") {
+        calls.push(`register-native:${nameOrProvider.id}`);
+        nativeRegistrations.set(nameOrProvider.id, nameOrProvider);
+        return;
+      }
+      const name = nameOrProvider;
       calls.push(`register:${name}`);
       const merged: Record<string, unknown> = {
         ...registrations.get(name),
@@ -252,7 +265,15 @@ function createFakePi(): {
     }
   };
 
-  return { pi, commands, calls, registrations, dispatch, fireSessionStart };
+  return {
+    pi,
+    commands,
+    calls,
+    registrations,
+    nativeRegistrations,
+    dispatch,
+    fireSessionStart,
+  };
 }
 
 /** The `session_start` context fields `src/index.ts` reads. */
@@ -261,6 +282,40 @@ interface FakeSessionContext {
   hasUI: boolean;
   isProjectTrusted: () => boolean;
   ui: { notify: Mock<(message: string, type?: string) => void> };
+  modelRegistry: FakeModelRegistry;
+}
+
+/** The `ModelRegistry` methods the account slots and pool read. */
+interface FakeModelRegistry {
+  getProvider(id: string): Provider | undefined;
+  getProviderAuthStatus(id: string): { configured: boolean };
+  getApiKeyForProvider(id: string): Promise<string | undefined>;
+}
+
+/**
+ * A registry holding stored logins.  `anthropic` has no OAuth flow unless
+ * `anthropicOAuth` is given, so tests that do not exercise accounts see no
+ * slot registrations.
+ */
+function createFakeRegistry(
+  options: {
+    anthropicOAuth?: OAuthAuth;
+    tokens?: Record<string, string>;
+    providers?: Map<string, Provider>;
+  } = {},
+): FakeModelRegistry {
+  const tokens = new Map(Object.entries(options.tokens ?? {}));
+  const anthropic = {
+    id: "anthropic",
+    name: "Anthropic",
+    auth: options.anthropicOAuth ? { oauth: options.anthropicOAuth } : {},
+  } as unknown as Provider;
+  return {
+    getProvider: (id) =>
+      id === "anthropic" ? anthropic : options.providers?.get(id),
+    getProviderAuthStatus: (id) => ({ configured: tokens.has(id) }),
+    getApiKeyForProvider: (id) => Promise.resolve(tokens.get(id)),
+  };
 }
 
 type SessionStartHandler = (
@@ -276,6 +331,7 @@ function createSessionContext(
     hasUI: overrides.hasUI ?? false,
     isProjectTrusted: overrides.isProjectTrusted ?? (() => false),
     ui: { notify: vi.fn<(message: string, type?: string) => void>() },
+    modelRegistry: overrides.modelRegistry ?? createFakeRegistry(),
   };
 }
 
@@ -677,6 +733,115 @@ describe("index registration: the extension does not write to the pi-ai api regi
       builtin,
       "registering an api-registry override would put this extension in the dispatch path of every anthropic-messages provider; see docs/architecture.md",
     );
+  });
+});
+
+describe("index registration: multiple Claude accounts", () => {
+  const SECOND_TOKEN = "sk-ant-oat01-second-account";
+  const OAUTH = { name: "Anthropic (Claude Pro/Max)" } as OAuthAuth;
+
+  beforeEach(() => {
+    resetApiProviders();
+    delegateCalls.length = 0;
+    builtinTransportMock.mockClear();
+  });
+
+  describe("login slots", () => {
+    test("session start registers anthropic-2 as a login-only slot", async () => {
+      const { default: registerExtension } = await import("#src/index");
+      const { pi, calls, nativeRegistrations, fireSessionStart } =
+        createFakePi();
+      await registerExtension(pi);
+      await fireSessionStart(
+        createSessionContext({
+          modelRegistry: createFakeRegistry({ anthropicOAuth: OAUTH }),
+        }),
+      );
+
+      assert.deepEqual(calls, [
+        "unregister:anthropic",
+        "register:anthropic",
+        "register-native:anthropic-2",
+      ]);
+      const slot = nativeRegistrations.get("anthropic-2");
+      assert.ok(slot);
+      assert.equal(slot.name, "Anthropic account 2");
+      assert.equal(slot.auth.oauth, OAUTH);
+      assert.deepEqual(slot.getModels(), []);
+    });
+  });
+
+  describe("routing", () => {
+    function usageResponse(percent: number): Response {
+      return new Response(
+        JSON.stringify({
+          five_hour: { utilization: percent, resets_at: null },
+        }),
+      );
+    }
+
+    async function sendThroughWrapper(
+      model: Model<"anthropic-messages">,
+    ): Promise<string | null> {
+      // Usage probes: the primary account is busier than the second.
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((_input: string, init?: RequestInit) =>
+          Promise.resolve(
+            usageResponse(
+              new Headers(init?.headers).get("authorization") ===
+                `Bearer ${OAUTH_TOKEN}`
+                ? 80
+                : 10,
+            ),
+          ),
+        ),
+      );
+      onTestFinished(() => {
+        vi.unstubAllGlobals();
+      });
+
+      const { default: registerExtension } = await import("#src/index");
+      const { pi, dispatch, fireSessionStart } = createFakePi();
+      await registerExtension(pi);
+      await fireSessionStart(
+        createSessionContext({
+          modelRegistry: createFakeRegistry({
+            anthropicOAuth: OAUTH,
+            tokens: { "anthropic-2": SECOND_TOKEN },
+          }),
+        }),
+      );
+
+      const wire = vi.fn((_input: string, _init?: RequestInit) =>
+        Promise.resolve(new Response("ok")),
+      );
+      dispatch(model, CONTEXT, {
+        apiKey: OAUTH_TOKEN,
+        sessionId: "session-1",
+        fetch: wire as unknown as typeof fetch,
+      });
+      const transportFetch = delegateCalls[0]?.options?.fetch;
+      assert.ok(transportFetch, "OAuth requests get a fetch wrapper");
+      await transportFetch("https://api.anthropic.com/v1/messages", {
+        headers: { authorization: `Bearer ${OAUTH_TOKEN}` },
+        body: "{}",
+      });
+      const [, sent] = wire.mock.calls[0] ?? [];
+      return new Headers(sent?.headers).get("authorization");
+    }
+
+    test("sends an anthropic session through the least-used account", async () => {
+      assert.equal(await sendThroughWrapper(MODEL), `Bearer ${SECOND_TOKEN}`);
+    });
+
+    test("leaves a request to another named provider on its own account", async () => {
+      writeGlobalConfig({ providers: ["anthropic-2"] });
+      assert.equal(
+        await sendThroughWrapper(EXTRA_PROVIDER_MODEL),
+        `Bearer ${OAUTH_TOKEN}`,
+      );
+    });
   });
 });
 

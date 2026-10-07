@@ -209,16 +209,29 @@ export class AccountPool {
 
   /** Every account in pool order, for `/anthropic-auth:status`. */
   entries(): readonly AccountPoolEntry[] {
-    const now = this.now();
-    return (this.directory?.accounts() ?? []).map((id) => {
-      const until = this.limits.get(id);
-      return {
-        id,
-        usage: this.observed.get(id)?.usage ?? null,
-        limitedUntil: until !== undefined && until > now ? until : null,
-        activeSessions: this.activeSessions(id),
-      };
-    });
+    return (this.directory?.accounts() ?? []).map((id) => this.entry(id));
+  }
+
+  /**
+   * The account a session's requests currently go to, or `undefined` before
+   * its first request and after that account is logged out.
+   */
+  sessionAccount(sessionKey: string): AccountPoolEntry | undefined {
+    const pin = this.pins.get(sessionKey);
+    if (!pin || !this.activeAccounts().includes(pin.accountId)) {
+      return undefined;
+    }
+    return this.entry(pin.accountId);
+  }
+
+  private entry(id: string): AccountPoolEntry {
+    const until = this.limits.get(id);
+    return {
+      id,
+      usage: this.observed.get(id)?.usage ?? null,
+      limitedUntil: until !== undefined && until > this.now() ? until : null,
+      activeSessions: this.activeSessions(id),
+    };
   }
 
   private activeAccounts(): readonly string[] {

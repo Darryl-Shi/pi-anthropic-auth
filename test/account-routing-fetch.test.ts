@@ -76,6 +76,15 @@ describe("createAccountRoutingFetch", () => {
     assert.equal(baseFetch.mock.calls[0]?.[1], sent);
   });
 
+  test("records the primary's usage with a single account", async () => {
+    accounts = ["anthropic"];
+    baseFetch.mockResolvedValue(
+      new Response("ok", { headers: rateLimitHeaders("0.42") }),
+    );
+    await routedFetch("s1")(URL, init());
+    assert.equal(pool.sessionAccount("s1")?.usage?.fiveHour, 0.42);
+  });
+
   test("leaves the request untouched when the session lands on anthropic", async () => {
     usageByToken.set(SECOND_TOKEN, {
       fiveHour: 0.9,

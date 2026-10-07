@@ -1,5 +1,9 @@
 import type { FetchFunction } from "@earendil-works/pi-ai";
-import type { AccountLease, AccountPool } from "./account-pool";
+import {
+  type AccountLease,
+  type AccountPool,
+  PRIMARY_ACCOUNT,
+} from "./account-pool";
 import { readUsageHeaders } from "./account-usage";
 
 /**
@@ -62,11 +66,15 @@ export function createAccountRoutingFetch(
     };
 
     // The pool never decides whether a request is sent, only with which
-    // token: any failure inside it degrades to the request as Pi built it.
+    // token: any failure inside it degrades to the request as Pi built it,
+    // which is on the primary account, so its usage is still recorded for
+    // the account indicator.
     const lease = await pool
       .acquire(sessionKey, primaryToken)
       .catch(() => undefined);
-    if (!lease) return dispatch(input, init);
+    if (!lease) {
+      return send({ accountId: PRIMARY_ACCOUNT, token: primaryToken });
+    }
 
     const response = await send(lease);
     if (!FAILOVER_STATUSES.has(response.status)) return response;

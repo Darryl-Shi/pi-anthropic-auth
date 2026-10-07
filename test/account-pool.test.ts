@@ -254,6 +254,39 @@ describe("AccountPool", () => {
     });
   });
 
+  describe("sessionAccount", () => {
+    test("is the account a session is pinned to, with its usage", async () => {
+      usageByToken.set(PRIMARY_TOKEN, usage(0.9));
+      await pool.acquire("s1", PRIMARY_TOKEN);
+      pool.observe("anthropic-2", usage(0.3));
+
+      assert.deepEqual(pool.sessionAccount("s1"), {
+        id: "anthropic-2",
+        usage: usage(0.3),
+        limitedUntil: null,
+        activeSessions: 1,
+      });
+    });
+
+    test("is the only account with a single login", async () => {
+      accounts = ["anthropic"];
+      await pool.acquire("s1", PRIMARY_TOKEN);
+      assert.equal(pool.sessionAccount("s1")?.id, "anthropic");
+    });
+
+    test("is undefined for a session that has sent nothing", () => {
+      assert.equal(pool.sessionAccount("s1"), undefined);
+    });
+
+    test("is undefined once the account is logged out", async () => {
+      usageByToken.set(PRIMARY_TOKEN, usage(0.9));
+      await pool.acquire("s1", PRIMARY_TOKEN);
+      assert.equal(pool.sessionAccount("s1")?.id, "anthropic-2");
+      accounts = ["anthropic"];
+      assert.equal(pool.sessionAccount("s1"), undefined);
+    });
+  });
+
   test("entries report each account in pool order", async () => {
     pool.observe("anthropic", usage(0.25));
     await pool.acquire("s1", PRIMARY_TOKEN);

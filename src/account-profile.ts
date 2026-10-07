@@ -1,4 +1,4 @@
-import { isAnthropicOAuthToken } from "./oauth-transport";
+import { isAnthropicOAuthToken } from "./oauth-token";
 
 /**
  * Claude Code's account profile endpoint.  It answers an OAuth bearer token

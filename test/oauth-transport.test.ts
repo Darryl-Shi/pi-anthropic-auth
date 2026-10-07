@@ -8,10 +8,8 @@ import type {
 } from "@earendil-works/pi-ai";
 import { normalizeContext } from "@earendil-works/pi-ai";
 import { beforeEach, describe, test } from "vitest";
-import {
-  createAnthropicOAuthStreamSimple,
-  isAnthropicOAuthToken,
-} from "#src/oauth-transport";
+import { isAnthropicOAuthToken } from "#src/oauth-token";
+import { createAnthropicOAuthStreamSimple } from "#src/oauth-transport";
 import {
   claudeCodeVersionTooOldResponse,
   okResponse,

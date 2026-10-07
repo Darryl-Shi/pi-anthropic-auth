@@ -82,6 +82,8 @@ describe("createAccountRoutingFetch", () => {
       sevenDay: null,
       limited: false,
       resetsAt: null,
+      fiveHourResetsAt: null,
+      sevenDayResetsAt: null,
     });
     const sent = init();
     await routedFetch("s1")(URL, sent);
@@ -94,6 +96,8 @@ describe("createAccountRoutingFetch", () => {
       sevenDay: null,
       limited: false,
       resetsAt: null,
+      fiveHourResetsAt: null,
+      sevenDayResetsAt: null,
     });
     await routedFetch("s1")(URL, init());
 
@@ -180,6 +184,8 @@ describe("createAccountRoutingFetch", () => {
         sevenDay: null,
         limited: true,
         resetsAt: NOW + 60_000,
+        fiveHourResetsAt: null,
+        sevenDayResetsAt: null,
       });
       baseFetch.mockResolvedValueOnce(new Response("limited", { status: 429 }));
 

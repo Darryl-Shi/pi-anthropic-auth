@@ -271,6 +271,8 @@ describe("createAnthropicOAuthStreamSimple", () => {
             sevenDay: null,
             limited: false,
             resetsAt: null,
+            fiveHourResetsAt: null,
+            sevenDayResetsAt: null,
           }),
       });
       const directory = {

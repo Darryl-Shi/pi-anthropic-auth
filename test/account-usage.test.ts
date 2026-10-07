@@ -21,12 +21,14 @@ describe("readUsageHeaders", () => {
     "anthropic-ratelimit-unified-status": "allowed",
   };
 
-  test("reads both windows as fractions and the binding reset in ms", () => {
+  test("reads both windows as fractions and every reset in ms", () => {
     assert.deepEqual(readUsageHeaders(new Headers(CAPTURED)), {
       fiveHour: 0,
       sevenDay: 0.01,
       limited: false,
       resetsAt: 1791393600_000,
+      fiveHourResetsAt: 1791393600_000,
+      sevenDayResetsAt: 1791871200_000,
     });
   });
 
@@ -56,6 +58,8 @@ describe("readUsageHeaders", () => {
       sevenDay: 1,
       limited: false,
       resetsAt: null,
+      fiveHourResetsAt: null,
+      sevenDayResetsAt: null,
     });
   });
 });
@@ -80,6 +84,8 @@ describe("parseUsageResponse", () => {
         sevenDay: 0.01,
         limited: false,
         resetsAt: Date.parse("2026-10-13T06:00:00.067794+00:00"),
+        fiveHourResetsAt: Date.parse("2026-10-07T17:20:00.067766+00:00"),
+        sevenDayResetsAt: Date.parse("2026-10-13T06:00:00.067794+00:00"),
       },
     );
   });
@@ -95,6 +101,8 @@ describe("parseUsageResponse", () => {
         sevenDay: 0.4,
         limited: true,
         resetsAt: Date.parse("2026-10-07T17:20:00Z"),
+        fiveHourResetsAt: Date.parse("2026-10-07T17:20:00Z"),
+        sevenDayResetsAt: Date.parse("2026-10-13T06:00:00Z"),
       },
     );
   });
@@ -113,6 +121,8 @@ describe("usageLoad", () => {
         sevenDay: 0.7,
         limited: false,
         resetsAt: null,
+        fiveHourResetsAt: null,
+        sevenDayResetsAt: null,
       }),
       0.7,
     );
@@ -126,6 +136,8 @@ describe("usageLoad", () => {
         sevenDay: null,
         limited: false,
         resetsAt: null,
+        fiveHourResetsAt: null,
+        sevenDayResetsAt: null,
       }),
       0,
     );
@@ -152,6 +164,8 @@ describe("fetchAccountUsage", () => {
       sevenDay: null,
       limited: false,
       resetsAt: null,
+      fiveHourResetsAt: null,
+      sevenDayResetsAt: null,
     });
     const [url, init] = fetchMock.mock.calls[0];
     assert.equal(url, "https://api.anthropic.com/api/oauth/usage");

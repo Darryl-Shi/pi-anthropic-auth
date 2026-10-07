@@ -17,6 +17,10 @@ export interface AccountUsage {
   limited: boolean;
   /** When the binding window resets, in epoch milliseconds, when reported. */
   resetsAt: number | null;
+  /** When the 5-hour window resets, in epoch milliseconds, when reported. */
+  fiveHourResetsAt: number | null;
+  /** When the 7-day window resets, in epoch milliseconds, when reported. */
+  sevenDayResetsAt: number | null;
 }
 
 const USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
@@ -52,6 +56,8 @@ export function readUsageHeaders(headers: Headers): AccountUsage | undefined {
     sevenDay,
     limited: status === "rejected",
     resetsAt: readEpochSeconds(headers.get(`${HEADER}-reset`)),
+    fiveHourResetsAt: readEpochSeconds(headers.get(`${HEADER}-5h-reset`)),
+    sevenDayResetsAt: readEpochSeconds(headers.get(`${HEADER}-7d-reset`)),
   };
 }
 
@@ -75,6 +81,8 @@ export function parseUsageResponse(body: unknown): AccountUsage | undefined {
     sevenDay: sevenDay?.utilization ?? null,
     limited: windows.some((window) => (window.utilization ?? 0) >= 1),
     resetsAt: binding.resetsAt,
+    fiveHourResetsAt: fiveHour?.resetsAt ?? null,
+    sevenDayResetsAt: sevenDay?.resetsAt ?? null,
   };
 }
 

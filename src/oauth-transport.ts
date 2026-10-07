@@ -1,6 +1,7 @@
 import type {
   Api,
   AssistantMessageEventStream,
+  FetchFunction,
   Model,
   SimpleStreamOptions,
   TranscriptContext,
@@ -111,27 +112,16 @@ export function createAnthropicOAuthStreamSimple(
     const isOAuthRequest = isAnthropicOAuthToken(apiKey);
     const callerOnPayload = options?.onPayload;
 
-    // Multi-account routing applies only to `anthropic` itself: a request to
-    // another named provider (pi-multi-pass's `anthropic-2`) already names
-    // the account it wants.  It sits between the version sync and the
-    // network, so a version retry stays on the session's account.
-    const routedFetch =
-      isOAuthRequest && pool && model.provider === PRIMARY_ACCOUNT
-        ? createAccountRoutingFetch({
-            pool,
-            sessionId: options?.sessionId,
-            primaryToken: apiKey,
-            baseFetch: options?.fetch,
-          })
-        : options?.fetch;
-
     // Pi's own Claude Code version is only observable at the fetch boundary:
     // pi-ai's `createClient` adds `user-agent: claude-cli/<version>`
     // downstream of every other seam we can reach.  The sync object is
     // constructed only for OAuth requests, so an API-key request keeps the
     // caller's `fetch` (or none) untouched.
     const versionSync = isOAuthRequest
-      ? createBillingVersionSync(learnedFloor, routedFetch)
+      ? createBillingVersionSync(
+          learnedFloor,
+          accountFetch(pool, model, apiKey, options ?? {}),
+        )
       : undefined;
 
     const composeCallerOnPayload = async (
@@ -166,4 +156,28 @@ export function createAnthropicOAuthStreamSimple(
       ...(versionSync ? { fetch: versionSync.fetch } : {}),
     });
   };
+}
+
+/**
+ * The `fetch` beneath the billing version sync for an OAuth request: the
+ * account-routing `fetch` when the pool applies, else the caller's own.
+ *
+ * Routing applies only to `anthropic` itself: a request to another named
+ * provider (pi-multi-pass's `anthropic-2`) already names the account it
+ * wants.  It sits beneath the version sync, so a version retry stays on the
+ * session's account.
+ */
+function accountFetch(
+  pool: AccountPool | undefined,
+  model: Model<Api>,
+  primaryToken: string,
+  options: SimpleStreamOptions,
+): FetchFunction | undefined {
+  if (!pool || model.provider !== PRIMARY_ACCOUNT) return options.fetch;
+  return createAccountRoutingFetch({
+    pool,
+    sessionId: options.sessionId,
+    primaryToken,
+    baseFetch: options.fetch,
+  });
 }

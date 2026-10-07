@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import type { Mock } from "vitest";
 import { beforeEach, describe, test, vi } from "vitest";
 import { AccountPool } from "#src/account-pool";
 import type { AccountUsage } from "#src/account-usage";
@@ -25,9 +26,7 @@ describe("AccountPool", () => {
   let accounts: string[];
   let tokens: Map<string, string | undefined>;
   let usageByToken: Map<string, AccountUsage | undefined>;
-  let fetchUsage: ReturnType<
-    typeof vi.fn<(token: string) => Promise<AccountUsage | undefined>>
-  >;
+  let fetchUsage: Mock<(token: string) => Promise<AccountUsage | undefined>>;
   let pool: AccountPool;
 
   beforeEach(() => {
@@ -55,6 +54,18 @@ describe("AccountPool", () => {
       accounts = ["anthropic"];
       assert.equal(await pool.acquire("s1", PRIMARY_TOKEN), undefined);
       assert.equal(fetchUsage.mock.calls.length, 0);
+    });
+
+    test("keeps a session started on one account there when a second is added", async () => {
+      accounts = ["anthropic"];
+      await pool.acquire("s1", PRIMARY_TOKEN);
+      accounts = ["anthropic", "anthropic-2"];
+      usageByToken.set(PRIMARY_TOKEN, usage(0.9));
+
+      assert.equal(
+        (await pool.acquire("s1", PRIMARY_TOKEN))?.accountId,
+        "anthropic",
+      );
     });
 
     test("routes to the primary when no extra account has an OAuth token", async () => {
@@ -107,6 +118,55 @@ describe("AccountPool", () => {
     });
   });
 
+  describe("concurrency", () => {
+    test("overlapping first requests of one session land on one account", async () => {
+      const leases = await Promise.all([
+        pool.acquire("s1", PRIMARY_TOKEN),
+        pool.acquire("s1", PRIMARY_TOKEN),
+      ]);
+      assert.equal(leases[0]?.accountId, leases[1]?.accountId);
+      assert.equal(
+        pool.entries().reduce((n, e) => n + e.activeSessions, 0),
+        1,
+      );
+    });
+
+    test("sessions starting together share one usage probe per account", async () => {
+      await Promise.all([
+        pool.acquire("s1", PRIMARY_TOKEN),
+        pool.acquire("s2", PRIMARY_TOKEN),
+        pool.acquire("s3", PRIMARY_TOKEN),
+      ]);
+      assert.deepEqual(fetchUsage.mock.calls.map(([token]) => token).sort(), [
+        PRIMARY_TOKEN,
+        SECOND_TOKEN,
+      ]);
+    });
+
+    test("sessions starting together all wait for fresh usage", async () => {
+      // Hold the probes open until both sessions are waiting on them, so the
+      // second session cannot be placed against usage not yet read.
+      const gate = Promise.withResolvers<undefined>();
+      fetchUsage.mockImplementation(async (token) => {
+        await gate.promise;
+        return token === PRIMARY_TOKEN ? usage(0.9) : usage(0.1);
+      });
+      const pending = Promise.all([
+        pool.acquire("s1", PRIMARY_TOKEN),
+        pool.acquire("s2", PRIMARY_TOKEN),
+      ]);
+      await vi.waitFor(() => {
+        assert.equal(fetchUsage.mock.calls.length, 2);
+      });
+      gate.resolve(undefined);
+      const leases = await pending;
+      assert.deepEqual(
+        leases.map((lease) => lease?.accountId),
+        ["anthropic-2", "anthropic-2"],
+      );
+    });
+  });
+
   describe("pinning", () => {
     test("keeps a session on its account as usage shifts", async () => {
       usageByToken.set(PRIMARY_TOKEN, usage(0.1));
@@ -147,6 +207,7 @@ describe("AccountPool", () => {
 
     test("forgets a pin idle for an hour", async () => {
       await pool.acquire("s1", PRIMARY_TOKEN);
+      assert.equal(pool.entries()[0]?.activeSessions, 1);
       now += 60 * 60_000;
       assert.equal(pool.entries()[0]?.activeSessions, 0);
     });

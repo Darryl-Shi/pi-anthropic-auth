@@ -24,6 +24,8 @@ const OAUTH_BETA = "oauth-2025-04-20";
 const USAGE_TIMEOUT_MS = 3000;
 
 const HEADER = "anthropic-ratelimit-unified";
+/** Year 5138: anything later is not a reset time, and would not format. */
+const MAX_EPOCH_SECONDS = 1e11;
 
 /**
  * The account's load for balancing: its most-used window, or 0 when neither
@@ -130,7 +132,9 @@ function readFraction(value: string | null): number | null {
 function readEpochSeconds(value: string | null): number | null {
   if (value === null || value.trim() === "") return null;
   const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed * 1000 : null;
+  return Number.isFinite(parsed) && parsed > 0 && parsed < MAX_EPOCH_SECONDS
+    ? parsed * 1000
+    : null;
 }
 
 function clampFraction(value: number): number {

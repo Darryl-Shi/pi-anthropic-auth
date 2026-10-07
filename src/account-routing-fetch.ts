@@ -25,6 +25,8 @@ export interface AccountRoutingOptions {
   primaryToken: string;
   /** The caller's own `fetch`, when it supplied one. */
   baseFetch: FetchFunction | undefined;
+  /** Clock for `retry-after`; injectable so tests share the pool's. */
+  now?: () => number;
 }
 
 /**
@@ -44,7 +46,7 @@ export interface AccountRoutingOptions {
 export function createAccountRoutingFetch(
   options: AccountRoutingOptions,
 ): FetchFunction {
-  const { pool, primaryToken, baseFetch } = options;
+  const { pool, primaryToken, baseFetch, now = Date.now } = options;
   const sessionKey = options.sessionId ?? UNSESSIONED_KEY;
 
   return async (input, init) => {
@@ -59,23 +61,29 @@ export function createAccountRoutingFetch(
       return response;
     };
 
-    const lease = await pool.acquire(sessionKey, primaryToken);
+    // The pool never decides whether a request is sent, only with which
+    // token: any failure inside it degrades to the request as Pi built it.
+    const lease = await pool
+      .acquire(sessionKey, primaryToken)
+      .catch(() => undefined);
     if (!lease) return dispatch(input, init);
 
     const response = await send(lease);
     if (!FAILOVER_STATUSES.has(response.status)) return response;
 
-    const next = await pool.failover(
-      sessionKey,
-      lease.accountId,
-      primaryToken,
-      limitedUntil(response),
-    );
+    const next = await pool
+      .failover(
+        sessionKey,
+        lease.accountId,
+        primaryToken,
+        limitedUntil(response, now()),
+      )
+      .catch(() => undefined);
     if (!next) return response;
 
-    // One move per request: a second 429 reaches the SDK, which applies its
-    // own retry policy, and the pool already knows both accounts are limited.
-    await response.body?.cancel();
+    // One move per request: a second failure reaches the SDK, which applies
+    // its own retry policy.
+    await response.body?.cancel().catch(() => undefined);
     return send(next);
   };
 }
@@ -95,12 +103,17 @@ function withToken(
   return { ...init, headers };
 }
 
-/** When a rate-limited account frees up, in epoch ms, when the response says. */
-function limitedUntil(response: Response): number | null {
+/**
+ * When a failed account is expected to recover, in epoch ms, when the
+ * response says.  The unified reset is on every response, so it is trusted
+ * only when the unified status says the account is the thing that is limited;
+ * otherwise `retry-after` governs.
+ */
+function limitedUntil(response: Response, now: number): number | null {
   const usage = readUsageHeaders(response.headers);
-  if (usage?.resetsAt) return usage.resetsAt;
+  if (usage?.limited && usage.resetsAt !== null) return usage.resetsAt;
   const retryAfter = Number(response.headers.get("retry-after"));
   return Number.isFinite(retryAfter) && retryAfter > 0
-    ? Date.now() + retryAfter * 1000
+    ? now + retryAfter * 1000
     : null;
 }

@@ -22,6 +22,7 @@ describe("AccountSlots", () => {
   let loggedIn: Set<string>;
   let registry: SlotRegistry;
   let registered: Provider[];
+  let unregistered: string[];
   let slots: AccountSlots;
 
   beforeEach(() => {
@@ -32,10 +33,15 @@ describe("AccountSlots", () => {
       getProviderAuthStatus: (id) => ({ configured: loggedIn.has(id) }),
     };
     registered = [];
+    unregistered = [];
     slots = new AccountSlots({
       registerProvider(provider) {
         registered.push(provider);
         providers.set(provider.id, provider);
+      },
+      unregisterProvider(name) {
+        unregistered.push(name);
+        providers.delete(name);
       },
     });
   });
@@ -90,6 +96,30 @@ describe("AccountSlots", () => {
         registered.map(({ id }) => id),
         ["anthropic-2", "anthropic-3"],
       );
+    });
+  });
+
+  describe("after a logout", () => {
+    test("unregisters the spare a logout left surplus, keeping one free slot", () => {
+      loggedIn.add("anthropic-2");
+      slots.refresh(registry);
+      loggedIn.delete("anthropic-2");
+
+      assert.deepEqual(slots.refresh(registry), ["anthropic"]);
+      assert.equal(slots.spare(), "anthropic-2");
+      assert.deepEqual(unregistered, ["anthropic-3"]);
+    });
+
+    test("never unregisters a slot another extension registered", () => {
+      providers.set("anthropic-3", {
+        ...anthropicProvider(),
+        id: "anthropic-3",
+      });
+
+      slots.refresh(registry);
+
+      assert.deepEqual(unregistered, []);
+      assert.ok(providers.has("anthropic-3"));
     });
   });
 

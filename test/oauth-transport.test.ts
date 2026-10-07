@@ -9,7 +9,6 @@ import type {
 import { normalizeContext } from "@earendil-works/pi-ai";
 import { beforeEach, describe, test, vi } from "vitest";
 import { AccountPool } from "#src/account-pool";
-import { isAnthropicOAuthToken } from "#src/oauth-token";
 import { createAnthropicOAuthStreamSimple } from "#src/oauth-transport";
 import {
   claudeCodeVersionTooOldResponse,
@@ -89,13 +88,6 @@ function resolveOnPayload(
   assert.ok(onPayload);
   return onPayload;
 }
-
-test("isAnthropicOAuthToken recognizes only sk-ant-oat access tokens", () => {
-  assert.equal(isAnthropicOAuthToken(OAUTH_TOKEN), true);
-  assert.equal(isAnthropicOAuthToken(API_KEY), false);
-  assert.equal(isAnthropicOAuthToken(undefined), false);
-  assert.equal(isAnthropicOAuthToken(""), false);
-});
 
 describe("createAnthropicOAuthStreamSimple", () => {
   let calls: CapturingDelegate["calls"];
@@ -329,7 +321,7 @@ describe("createAnthropicOAuthStreamSimple", () => {
     });
 
     test("never consults the pool for an API-key request", () => {
-      const { pool, directory } = poolWithBusyPrimary();
+      const { pool } = poolWithBusyPrimary();
       const capturing = createCapturingDelegate();
       calls = capturing.calls;
       const callerFetch = (() =>
@@ -345,7 +337,6 @@ describe("createAnthropicOAuthStreamSimple", () => {
       );
 
       assert.equal(calls[0]?.options?.fetch, callerFetch);
-      assert.equal(directory.getApiKeyForProvider.mock.calls.length, 0);
     });
   });
 });

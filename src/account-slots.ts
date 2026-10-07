@@ -11,9 +11,10 @@ export interface SlotRegistry {
   getProviderAuthStatus(id: string): { configured: boolean };
 }
 
-/** The `ExtensionAPI` overload slot registration needs. */
+/** The `ExtensionAPI` methods slot registration needs. */
 export interface SlotRegistrar {
   registerProvider(provider: Provider): void;
+  unregisterProvider(name: string): void;
 }
 
 /** A backstop on the slot scan, far above any real account count. */
@@ -29,7 +30,9 @@ export function accountSlotId(index: number): string {
  * and removing one is Pi's own `/login` and `/logout`.
  *
  * Every logged-in slot is registered, plus exactly one spare: the lowest
- * free slot, which is what `/login` offers as "Anthropic account N".  Slots
+ * free slot, which is what `/login` offers as "Anthropic account N".
+ * A logged-in slot is found before it is registered, because Pi's stored
+ * credential status covers every `auth.json` entry.  Slots
  * reuse the built-in Anthropic provider's OAuth flow and register no models,
  * so the model picker is unchanged and requests still go to `anthropic/…`.
  *
@@ -40,14 +43,18 @@ export function accountSlotId(index: number): string {
 export class AccountSlots {
   private loggedIn: readonly string[] = [];
   private spareSlot: string | undefined;
+  /** Slot ids this extension registered, and so may unregister. */
+  private readonly ours = new Set<string>();
 
   constructor(private readonly registrar: SlotRegistrar) {}
 
   /**
    * Re-reads which slots hold a login, registers any slot not yet known to
-   * Pi, and returns the pool's accounts in order, `anthropic` first.
-   * Cheap enough to run per session assignment, which is how a login made
-   * mid-session joins the pool without a restart.
+   * Pi, unregisters a spare of ours that a logout left surplus, and returns
+   * the pool's accounts in order, `anthropic` first.
+   * It only reads in-memory registry state, so it is cheap enough to run on
+   * every request, which is how a login made mid-session joins the pool
+   * without a restart.
    */
   refresh(registry: SlotRegistry): readonly string[] {
     const base = registry.getProvider(PRIMARY_ACCOUNT);
@@ -63,15 +70,27 @@ export class AccountSlots {
       } else if (spare === undefined) {
         spare = id;
       } else {
+        this.dropSurplusSlot(id);
         continue;
       }
       if (!registry.getProvider(id)) {
         this.registrar.registerProvider(slotProvider(id, index, base, oauth));
+        this.ours.add(id);
       }
     }
     this.loggedIn = loggedIn;
     this.spareSlot = spare;
     return this.accounts();
+  }
+
+  /**
+   * After `/logout anthropic-2` with `anthropic-3` registered as the spare,
+   * `anthropic-2` is the spare again; `anthropic-3` would otherwise linger as
+   * a second free slot in `/login`.  Only our own registrations are removed.
+   */
+  private dropSurplusSlot(id: string): void {
+    if (!this.ours.delete(id)) return;
+    this.registrar.unregisterProvider(id);
   }
 
   accounts(): readonly string[] {

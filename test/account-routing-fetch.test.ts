@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import type { Mock } from "vitest";
 import { beforeEach, describe, test, vi } from "vitest";
 import { AccountPool } from "#src/account-pool";
 import { createAccountRoutingFetch } from "#src/account-routing-fetch";
@@ -7,6 +8,9 @@ import type { AccountUsage } from "#src/account-usage";
 const PRIMARY_TOKEN = "sk-ant-oat01-primary";
 const SECOND_TOKEN = "sk-ant-oat01-second";
 const URL = "https://api.anthropic.com/v1/messages";
+/** A fixed clock shared by the pool and the fetch, so no test depends on today. */
+const NOW = 1_800_000_000_000;
+const RESET_SECONDS = NOW / 1000 + 3600;
 
 type Dispatch = (input: string, init?: RequestInit) => Promise<Response>;
 
@@ -17,7 +21,7 @@ function sentToken(init: RequestInit | undefined): string | null {
 function rateLimitHeaders(
   utilization: string,
   status = "allowed",
-  reset = "1791393600",
+  reset = String(RESET_SECONDS),
 ): Record<string, string> {
   return {
     "anthropic-ratelimit-unified-5h-utilization": utilization,
@@ -30,14 +34,15 @@ describe("createAccountRoutingFetch", () => {
   let accounts: string[];
   let usageByToken: Map<string, AccountUsage>;
   let pool: AccountPool;
-  let baseFetch: ReturnType<typeof vi.fn<Dispatch>>;
+  let baseFetch: Mock<Dispatch>;
 
-  function routedFetch(sessionId: string | undefined = "s1") {
+  function routedFetch(sessionId: string | undefined) {
     return createAccountRoutingFetch({
       pool,
       sessionId,
       primaryToken: PRIMARY_TOKEN,
       baseFetch: baseFetch as unknown as typeof fetch,
+      now: () => NOW,
     }) as unknown as Dispatch;
   }
 
@@ -55,6 +60,7 @@ describe("createAccountRoutingFetch", () => {
     usageByToken = new Map();
     pool = new AccountPool({
       fetchUsage: (token) => Promise.resolve(usageByToken.get(token)),
+      now: () => NOW,
     });
     pool.attach({
       accounts: () => accounts,
@@ -66,7 +72,7 @@ describe("createAccountRoutingFetch", () => {
   test("leaves the request untouched with a single account", async () => {
     accounts = ["anthropic"];
     const sent = init();
-    await routedFetch()(URL, sent);
+    await routedFetch("s1")(URL, sent);
     assert.equal(baseFetch.mock.calls[0]?.[1], sent);
   });
 
@@ -78,7 +84,7 @@ describe("createAccountRoutingFetch", () => {
       resetsAt: null,
     });
     const sent = init();
-    await routedFetch()(URL, sent);
+    await routedFetch("s1")(URL, sent);
     assert.equal(baseFetch.mock.calls[0]?.[1], sent);
   });
 
@@ -89,7 +95,7 @@ describe("createAccountRoutingFetch", () => {
       limited: false,
       resetsAt: null,
     });
-    await routedFetch()(URL, init());
+    await routedFetch("s1")(URL, init());
 
     const [, sent] = baseFetch.mock.calls[0] ?? [];
     assert.equal(sentToken(sent), `Bearer ${SECOND_TOKEN}`);
@@ -104,17 +110,32 @@ describe("createAccountRoutingFetch", () => {
     baseFetch.mockResolvedValue(
       new Response("ok", { headers: rateLimitHeaders("0.42") }),
     );
-    await routedFetch()(URL, init());
+    await routedFetch("s1")(URL, init());
     assert.equal(pool.entries()[0]?.usage?.fiveHour, 0.42);
   });
 
   test("pins requests without a session id to one shared account", async () => {
+    // Session s1 takes anthropic; the unsessioned requests then share one
+    // pin on the other account instead of alternating.
+    await routedFetch("s1")(URL, init());
     await routedFetch(undefined)(URL, init());
     await routedFetch(undefined)(URL, init());
     assert.deepEqual(
       baseFetch.mock.calls.map(([, sent]) => sentToken(sent)),
-      [`Bearer ${PRIMARY_TOKEN}`, `Bearer ${PRIMARY_TOKEN}`],
+      [
+        `Bearer ${PRIMARY_TOKEN}`,
+        `Bearer ${SECOND_TOKEN}`,
+        `Bearer ${SECOND_TOKEN}`,
+      ],
     );
+  });
+
+  test("sends the request as Pi built it when the pool fails", async () => {
+    vi.spyOn(pool, "acquire").mockRejectedValue(new Error("registry gone"));
+    const sent = init();
+    const response = await routedFetch("s1")(URL, sent);
+    assert.equal(response.status, 200);
+    assert.equal(baseFetch.mock.calls[0]?.[1], sent);
   });
 
   describe("on a 429", () => {
@@ -126,8 +147,8 @@ describe("createAccountRoutingFetch", () => {
         }),
       );
 
-      const response = await routedFetch()(URL, init());
-      await routedFetch()(URL, init());
+      const response = await routedFetch("s1")(URL, init());
+      await routedFetch("s1")(URL, init());
 
       assert.equal(response.status, 200);
       assert.deepEqual(
@@ -138,7 +159,18 @@ describe("createAccountRoutingFetch", () => {
           `Bearer ${SECOND_TOKEN}`,
         ],
       );
-      assert.equal(pool.entries()[0]?.limitedUntil, 1791393600_000);
+      assert.equal(pool.entries()[0]?.limitedUntil, RESET_SECONDS * 1000);
+    });
+
+    test("sets the account aside by retry-after when the unified status is not rejected", async () => {
+      baseFetch.mockResolvedValueOnce(
+        new Response("limited", {
+          status: 429,
+          headers: { ...rateLimitHeaders("0.2"), "retry-after": "30" },
+        }),
+      );
+      await routedFetch("s1")(URL, init());
+      assert.equal(pool.entries()[0]?.limitedUntil, NOW + 30_000);
     });
 
     test("surfaces the 429 when no other account is usable", async () => {
@@ -147,11 +179,11 @@ describe("createAccountRoutingFetch", () => {
         fiveHour: 1,
         sevenDay: null,
         limited: true,
-        resetsAt: Date.now() + 60_000,
+        resetsAt: NOW + 60_000,
       });
       baseFetch.mockResolvedValueOnce(new Response("limited", { status: 429 }));
 
-      const response = await routedFetch()(URL, init());
+      const response = await routedFetch("s1")(URL, init());
 
       assert.equal(response.status, 429);
       assert.equal(baseFetch.mock.calls.length, 1);
@@ -159,7 +191,7 @@ describe("createAccountRoutingFetch", () => {
 
     test("does not chase a second 429", async () => {
       baseFetch.mockResolvedValue(new Response("limited", { status: 429 }));
-      const response = await routedFetch()(URL, init());
+      const response = await routedFetch("s1")(URL, init());
       assert.equal(response.status, 429);
       assert.equal(baseFetch.mock.calls.length, 2);
     });
@@ -171,7 +203,7 @@ describe("createAccountRoutingFetch", () => {
         new Response("invalid token", { status: 401 }),
       );
 
-      const response = await routedFetch()(URL, init());
+      const response = await routedFetch("s1")(URL, init());
 
       assert.equal(response.status, 200);
       assert.deepEqual(
@@ -185,7 +217,7 @@ describe("createAccountRoutingFetch", () => {
   describe("on other errors", () => {
     test("returns them unchanged without moving the session", async () => {
       baseFetch.mockResolvedValue(new Response("bad", { status: 400 }));
-      const response = await routedFetch()(URL, init());
+      const response = await routedFetch("s1")(URL, init());
       assert.equal(response.status, 400);
       assert.equal(baseFetch.mock.calls.length, 1);
       assert.equal(pool.entries()[0]?.limitedUntil, null);

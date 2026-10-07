@@ -95,6 +95,10 @@ export class AccountPool {
   private readonly limits = new Map<string, number>();
   private readonly probes = new Map<string, Promise<void>>();
   private readonly probedAt = new Map<string, number>();
+  private readonly placements = new Map<
+    string,
+    Promise<AccountLease | undefined>
+  >();
   private readonly fetchUsage: (
     token: string,
   ) => Promise<AccountUsage | undefined>;
@@ -123,9 +127,32 @@ export class AccountPool {
     primaryToken: string,
   ): Promise<AccountLease | undefined> {
     const accounts = this.activeAccounts();
-    if (accounts.length < 2) return undefined;
+    if (accounts.length < 2) {
+      // Still pinned, to the only account there is, so a session already
+      // running when a second account is added keeps its cache.
+      if (this.directory) this.pin(sessionKey, PRIMARY_ACCOUNT);
+      return undefined;
+    }
     this.prunePins();
 
+    // Concurrent first requests of one session share one placement, so the
+    // session cannot be split across accounts before its pin exists.
+    const pending = this.placements.get(sessionKey);
+    if (pending) return pending;
+    const placement = this.leaseFor(sessionKey, accounts, primaryToken);
+    this.placements.set(sessionKey, placement);
+    try {
+      return await placement;
+    } finally {
+      this.placements.delete(sessionKey);
+    }
+  }
+
+  private async leaseFor(
+    sessionKey: string,
+    accounts: readonly string[],
+    primaryToken: string,
+  ): Promise<AccountLease | undefined> {
     const pin = this.pins.get(sessionKey);
     if (
       pin &&
@@ -232,9 +259,13 @@ export class AccountPool {
     const token = accountId === undefined ? undefined : tokens.get(accountId);
     if (accountId === undefined || token === undefined) return undefined;
 
-    this.pins.set(sessionKey, { accountId, lastUsed: now });
+    this.pin(sessionKey, accountId);
     debugLog("account-assigned", { accountId, candidates });
     return { accountId, token };
+  }
+
+  private pin(sessionKey: string, accountId: string): void {
+    this.pins.set(sessionKey, { accountId, lastUsed: this.now() });
   }
 
   private async tokenFor(
@@ -256,13 +287,13 @@ export class AccountPool {
    * cannot be read is not asked again for every new session.
    */
   private refreshStaleUsage(accountId: string, token: string): Promise<void> {
+    const inFlight = this.probes.get(accountId);
+    if (inFlight) return inFlight;
     const lastKnown = Math.max(
       this.observed.get(accountId)?.observedAt ?? -Infinity,
       this.probedAt.get(accountId) ?? -Infinity,
     );
     if (this.now() - lastKnown < USAGE_STALE_MS) return Promise.resolve();
-    const inFlight = this.probes.get(accountId);
-    if (inFlight) return inFlight;
 
     this.probedAt.set(accountId, this.now());
     const probe = this.fetchUsage(token)

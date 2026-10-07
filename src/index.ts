@@ -3,8 +3,9 @@ import {
   type ExtensionAPI,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
-import { AccountPool } from "./account-pool";
-import { AccountSlots } from "./account-slots";
+import { type AccountDirectory, AccountPool } from "./account-pool";
+import { AccountSlots, type SlotRegistry } from "./account-slots";
+import { debugLog } from "./debug";
 import {
   createStatusCommandHandler,
   type ExtensionDiagnostics,
@@ -121,27 +122,39 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     "global",
   );
 
+  // Extra accounts are login-only providers (`anthropic-2`, …) whose OAuth
+  // flow is the built-in Anthropic one, so the slots need the registry's
+  // `anthropic` provider and can only be registered once a session exists.
+  // The pool re-reads the slots on each request, so a `/login` made
+  // mid-session joins the pool without a restart.  A failure there must
+  // never take a request down, so it keeps the last known accounts.
+  const slots = new AccountSlots(pi);
+  const attachAccounts = (
+    registry: SlotRegistry & Pick<AccountDirectory, "getApiKeyForProvider">,
+  ): void => {
+    const accounts = (): readonly string[] => {
+      try {
+        return slots.refresh(registry);
+      } catch (error) {
+        debugLog("account-slots-refresh-failed", { error: String(error) });
+        return slots.accounts();
+      }
+    };
+    accounts();
+    pool.attach({
+      accounts,
+      getApiKeyForProvider: (provider) =>
+        registry.getApiKeyForProvider(provider),
+    });
+  };
+
   // The project layer needs the session's cwd and trust decision, which only
   // arrive with `session_start`.  An untrusted project's file is never read.
   // `session_start` is awaited before the first prompt, and pi looks the
   // provider up per request, so a project provider is shaped from the first
   // request too.  Warnings from both layers are reported here, where a UI is
   // in hand.
-  // Extra accounts are login-only providers (`anthropic-2`, …) whose OAuth
-  // flow is the built-in Anthropic one, so the slots need the registry's
-  // `anthropic` provider and can only be registered once a session exists.
-  // The pool re-reads the slots on each request, so a `/login` made
-  // mid-session joins the pool without a restart.
-  const slots = new AccountSlots(pi);
   pi.on("session_start", (_event, ctx) => {
-    const registry = ctx.modelRegistry;
-    slots.refresh(registry);
-    pool.attach({
-      accounts: () => slots.refresh(registry),
-      getApiKeyForProvider: (provider) =>
-        registry.getApiKeyForProvider(provider),
-    });
-
     if (ctx.isProjectTrusted()) {
       extraProviders.apply(
         loadExtensionConfig(projectConfigPath(ctx.cwd)),
@@ -149,6 +162,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
       );
     }
     reportConfigWarnings(extraProviders.warnings(), ctx);
+    attachAccounts(ctx.modelRegistry);
   });
 
   const loadDiagnostics = {
@@ -156,12 +170,16 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     modulePath: fileURLToPath(import.meta.url),
     transportResolved: true,
   };
-  const readDiagnostics = (): ExtensionDiagnostics => ({
-    ...loadDiagnostics,
-    shapedProviders: extraProviders.shapedProviders(),
-    configWarnings: extraProviders.warnings(),
-    accountPool: { entries: pool.entries(), spareSlot: slots.spare() },
-  });
+  const readDiagnostics = (): ExtensionDiagnostics => {
+    // `entries()` re-reads the slots, so the spare is read after it.
+    const entries = pool.entries();
+    return {
+      ...loadDiagnostics,
+      shapedProviders: extraProviders.shapedProviders(),
+      configWarnings: extraProviders.warnings(),
+      accountPool: { entries, spareSlot: slots.spare() },
+    };
+  };
 
   // The /anthropic-auth:status command surfaces the loaded version, module
   // path, transport resolution result, and shaped providers so users can

@@ -62,7 +62,8 @@ How sessions are placed:
 
 1. A session's first request goes to the account with the lowest usage, judged by the higher of its 5-hour and 7-day utilization as Anthropic reports it.
    That figure includes your claude.ai, Claude Code, and other pi usage, so the balance is real rather than local.
-   Accounts within 5 points of each other count as tied, and the tie goes to the account serving fewer active sessions.
+   Accounts within 5 points of the least-used one count as tied, and the tie goes to the account serving fewer active sessions.
+   Session counts are kept per pi process; usage is shared, because it comes from Anthropic.
 2. The session then stays on that account, compaction included, so its prompt cache keeps hitting.
 3. If the account is rate limited (429) or its token is rejected (401), it is set aside until it recovers, the session moves to the next best account, and the request is retried there once.
    The move costs that one session a cache miss.
@@ -70,6 +71,7 @@ How sessions are placed:
 With a single account nothing changes and no extra requests are made.
 `/anthropic-auth:status` shows each account's usage, any account set aside, and how many sessions it serves.
 Requests to another named provider (such as pi-multi-pass's `anthropic-2`, below) stay on that provider's account; only `anthropic` requests are balanced.
+If another extension already provides `anthropic-2`, `anthropic-3`, … with a Claude OAuth login, the extension uses that login as an account instead of registering its own slot, so those subscriptions join the `anthropic` pool too.
 
 ### Additional Anthropic subscriptions
 

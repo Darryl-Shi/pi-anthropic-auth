@@ -160,6 +160,7 @@ A slot registers no models, so the model picker is unchanged and Pi never routes
 
 The slots need `ctx.modelRegistry.getProvider("anthropic")`, so they are registered from `session_start`, not at load.
 Every logged-in slot is registered plus exactly one spare, the lowest free index, which is what `/login` offers as "Anthropic account N".
+After a logout reopens a lower index, the spare this extension registered above it is unregistered again, so `/login` still offers exactly one free slot; a slot another extension registered is never unregistered.
 Discovery reads `getProviderAuthStatus`, whose stored-provider snapshot covers every `auth.json` key whether or not a provider is registered, so a logged-in slot is found before it is registered and a gap left by a logout is offered again.
 The pool re-reads the slots on each request, so a login made mid-session joins without a restart.
 A slot id another extension already registered (pi-multi-pass's `anthropic-2`) is never replaced, because a native registration would drop that owner's config; its login is used as an account when it holds an `sk-ant-oat` token.
@@ -177,9 +178,12 @@ It applies only to requests whose `model.provider` is `anthropic`: a request to 
 `AccountPool` (`src/account-pool.ts`) pins each `options.sessionId` to an account on its first request.
 Pi sets `sessionId` on main-loop and compaction requests, so a session's compaction hits the same account's cache.
 Requests without a session id share one pin, so they also keep one account rather than hopping per call.
+While the pool has a single account, sessions are still pinned to it, so a session already running when a second account is added keeps its cache.
+Concurrent first requests of one session share one placement, and concurrent placements share one usage probe per account.
 
 A new session goes to the account with the lowest load, the higher of its 5-hour and 7-day utilization (`chooseAccount`, `src/account-balancer.ts`).
 Accounts within 5 points of the minimum are tied, and the tie goes to the account with fewer sessions active in the last hour, then to pool order; utilization only moves after a request lands, so sessions starting together would otherwise all pick one account.
+Session counts live in the extension instance, so separate pi processes balance on utilization alone.
 
 Utilization is Anthropic's, not counted locally, so claude.ai, Claude Code, and other pi processes are balanced too.
 Every OAuth response carries `anthropic-ratelimit-unified-{5h,7d}-utilization` as a 0..1 fraction plus `-status` and `-reset`, and the routing `fetch` feeds them back to the pool.
@@ -188,7 +192,9 @@ Both formats were measured live on 2026-10-07, and both are undocumented, so eve
 
 ### Failover
 
-A 429 (rate limited) or 401 (token rejected) sets the account aside until the reset Anthropic reports, or for five minutes when it reports none.
+A 429 (rate limited) or 401 (token rejected) sets the account aside: until the unified reset when `anthropic-ratelimit-unified-status` is `rejected`, else for `retry-after`, else for five minutes.
+The unified reset is on every response, so it is not trusted on a 429 the unified limit did not cause.
+A limit on one model's window (`seven_day_opus`) sets the whole account aside, which also steers other models away until it recovers; the headers do not say which window a 429 came from reliably enough to do better.
 The session is re-pinned to the best remaining account that is not set aside, and the request is retried there once; a second failure reaches the SDK unchanged.
 When no other account is usable, the original response is returned.
 
@@ -359,6 +365,6 @@ pi-observational-memory 3.1.x is the worked example: `resolveWorkerStreamSimple`
 - `src/account-pool.ts` — pins sessions to accounts, tracks each account's usage and set-aside time, and fails sessions over.
 - `src/account-balancer.ts` — the pure placement rule: least load, near-ties to fewer active sessions.
 - `src/account-usage.ts` — reads usage from the unified rate-limit headers and from `GET /api/oauth/usage`.
-- `src/account-routing-fetch.ts` — the per-request `fetch` that swaps the bearer token to the session's account and retries once on a 429 or 401.
+- `src/account-routing-fetch.ts` — the per-request `fetch` that swaps the bearer token to the session's account and retries once on a 429 or 401; any failure inside the pool degrades to the request as Pi built it.
 - `src/oauth-token.ts` — the `sk-ant-oat` OAuth token check.
 - `src/account-profile.ts` — looks up the Anthropic account behind a provider's OAuth login through `ctx.modelRegistry.getApiKeyForProvider` (which refreshes an expiring token) and Claude Code's `GET /api/oauth/profile`; never throws, and makes no request for a non-OAuth credential (Issue #80).

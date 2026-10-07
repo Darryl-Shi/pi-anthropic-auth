@@ -59,7 +59,7 @@ compatibility: Intended for the pi-anthropic-auth repository and Pi Anthropic OA
 
 Before anything else, run `/anthropic-auth:status` in Pi.
 The command prints the loaded version, the module path (which install it loaded from), and whether the built-in Anthropic transport resolved.
-Its `accounts:` block shows the plan behind each shaped provider's OAuth login (plan type, seat, rate-limit tier, subscription status, extra usage); `/anthropic-auth:status --account` adds the email and organization name, for telling several logins apart (Issue #80).
+Its `account pool:` block shows each pooled account's latest 5h/7d utilization, any set-aside time, and active sessions; its `accounts:` block shows the plan behind each shaped provider's and pooled account's OAuth login (plan type, seat, rate-limit tier, subscription status, extra usage); `/anthropic-auth:status --account` adds the email and organization name, for telling several logins apart (Issue #80).
 If the command is not found, the extension is not loaded — check for a Docker volume or `pi install` issue before debugging request shaping.
 
 Two copies can load at once — a local `-e`/`"../"` source copy and an installed npm copy from a `settings.json` `packages[]` entry (repo and global settings both contribute).
@@ -142,6 +142,7 @@ All request shaping runs in the transport wrapper (`src/oauth-transport.ts`), wh
 - the same section rules applied to mid-conversation `role: "system"` updates (Issue #69)
 
 One step does not fit in `onPayload` and runs in an injected `options.fetch` instead (`src/billing-version-sync.ts`): raising `cc_version` to pi's reported `claude-cli` version, and recovering from a `claude_code_version_too_old` rejection.
+Beneath it, for `anthropic` requests only, `src/account-routing-fetch.ts` swaps the bearer token to the account the session is pinned to and fails over on a 429 or 401; when debugging a multi-account OAuth failure, `PI_ANTHROPIC_AUTH_DEBUG=all` logs `account-assigned` and `account-failover`.
 Pi's version is added by pi-ai's own `createClient`, downstream of every other seam we can reach, so the built request's headers are the only place to read it.
 The body splice is an exact-string replacement of the header we emitted moments earlier — never a JSON round-trip, which would put a re-serialization downstream of the byte-exact section preservation.
 The recovery reads only a 400, through `response.clone()`, so the streaming success path is never touched.
@@ -175,6 +176,7 @@ Do not "fix" that by calling `registerApiProvider` — the registry is keyed by 
 - `src/diagnostics.ts`
 - `src/extension-config.ts`
 - `src/extra-provider-shaping.ts`
+- `src/account-pool.ts`, `src/account-slots.ts`, `src/account-routing-fetch.ts`, `src/account-usage.ts`, `src/account-balancer.ts`
 - `src/oauth-transport.ts`
 - `src/request-shaping.ts`
 - `src/system-prompt-sections.ts`

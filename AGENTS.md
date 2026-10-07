@@ -116,7 +116,7 @@ Important upstream behavior confirmed from `~/development/pi/pi`:
 
 Current source layout:
 
-1. `src/index.ts`: extension registration (transport wrapper + `/anthropic-auth:status` command)
+1. `src/index.ts`: extension registration (transport wrapper, account pool and slots, `/anthropic-auth:status` command)
 2. `src/host-transport.ts`: runtime resolution of Pi's built-in Anthropic transport via an `@earendil-works/pi-ai/compat` import through Pi's loader indirection, reading the `anthropicMessagesApi()` factory off the compat namespace (Issue #28, Issue #31, Issue #35, Issue #54)
 3. `src/oauth-transport.ts`: token-gated `streamSimple` wrapper that applies shaping on every Anthropic call path reaching `provider-composer` (Issue #46)
 4. `src/request-shaping.ts`: Anthropic OAuth request shaping helpers

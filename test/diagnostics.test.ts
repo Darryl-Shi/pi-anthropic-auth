@@ -256,7 +256,7 @@ describe("formatDiagnosticsReport", () => {
       );
     });
 
-    test("lists each account's usage, rate limit, and active sessions", () => {
+    test("lists each account's usage, unavailability, and active sessions", () => {
       const report = formatDiagnosticsReport({
         ...SAMPLE,
         accountPool: {
@@ -288,7 +288,7 @@ describe("formatDiagnosticsReport", () => {
       });
       assert.match(
         report,
-        /\n {2}account pool: 3 accounts \(add one with \/login anthropic-4\)\n {4}anthropic: 5h 34%, 7d 12%, 2 active sessions\n {4}anthropic-2: usage not yet seen, rate limited until 2026-10-07 17:20Z, 1 active session\n {4}anthropic-3: usage not reported, 0 active sessions$/,
+        /\n {2}account pool: 3 accounts \(add one with \/login anthropic-4\)\n {4}anthropic: 5h 34%, 7d 12%, 2 active sessions\n {4}anthropic-2: usage not yet seen, unavailable until 2026-10-07 17:20Z, 1 active session\n {4}anthropic-3: usage not reported, 0 active sessions$/,
       );
     });
   });

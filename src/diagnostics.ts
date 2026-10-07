@@ -151,7 +151,7 @@ function describePoolEntry(entry: AccountPoolEntry): string {
     describeUsage(entry.usage),
     entry.limitedUntil === null
       ? null
-      : `rate limited until ${formatInstant(entry.limitedUntil)}`,
+      : `unavailable until ${formatInstant(entry.limitedUntil)}`,
     sessions,
   ]
     .filter((part): part is string => part !== null)

@@ -9,6 +9,14 @@ import { readUsageHeaders } from "./account-usage";
  */
 export const UNSESSIONED_KEY = "(no session)";
 
+/**
+ * Responses that move the session to another account: 429 (the account is
+ * rate limited) and 401 (its token was revoked, or its login is otherwise
+ * broken beyond what Pi's refresh can fix).  Either way the account is set
+ * aside until it is expected to recover, and the session continues elsewhere.
+ */
+const FAILOVER_STATUSES: ReadonlySet<number> = new Set([401, 429]);
+
 export interface AccountRoutingOptions {
   pool: AccountPool;
   /** Pi's `options.sessionId`, when the caller supplied one. */
@@ -22,7 +30,7 @@ export interface AccountRoutingOptions {
 /**
  * Per-request `fetch` that sends the request with the token of the account
  * the pool pinned this session to, and moves the session to another account
- * when Anthropic rate limits the pinned one.
+ * when Anthropic rate limits the pinned one or rejects its token.
  *
  * The account is chosen here, not before the request is built, because the
  * pool may need to resolve tokens and read usage, which is asynchronous, and
@@ -55,7 +63,7 @@ export function createAccountRoutingFetch(
     if (!lease) return dispatch(input, init);
 
     const response = await send(lease);
-    if (response.status !== 429) return response;
+    if (!FAILOVER_STATUSES.has(response.status)) return response;
 
     const next = await pool.failover(
       sessionKey,

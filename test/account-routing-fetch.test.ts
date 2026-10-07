@@ -164,4 +164,31 @@ describe("createAccountRoutingFetch", () => {
       assert.equal(baseFetch.mock.calls.length, 2);
     });
   });
+
+  describe("on a 401", () => {
+    test("sets the account aside and retries on another", async () => {
+      baseFetch.mockResolvedValueOnce(
+        new Response("invalid token", { status: 401 }),
+      );
+
+      const response = await routedFetch()(URL, init());
+
+      assert.equal(response.status, 200);
+      assert.deepEqual(
+        baseFetch.mock.calls.map(([, sent]) => sentToken(sent)),
+        [`Bearer ${PRIMARY_TOKEN}`, `Bearer ${SECOND_TOKEN}`],
+      );
+      assert.notEqual(pool.entries()[0]?.limitedUntil, null);
+    });
+  });
+
+  describe("on other errors", () => {
+    test("returns them unchanged without moving the session", async () => {
+      baseFetch.mockResolvedValue(new Response("bad", { status: 400 }));
+      const response = await routedFetch()(URL, init());
+      assert.equal(response.status, 400);
+      assert.equal(baseFetch.mock.calls.length, 1);
+      assert.equal(pool.entries()[0]?.limitedUntil, null);
+    });
+  });
 });

@@ -3,7 +3,12 @@ import {
   type ExtensionAPI,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
-import { type AccountDirectory, AccountPool } from "./account-pool";
+import { AccountIndicator } from "./account-indicator";
+import {
+  type AccountDirectory,
+  AccountPool,
+  PRIMARY_ACCOUNT,
+} from "./account-pool";
 import { AccountSlots, type SlotRegistry } from "./account-slots";
 import { debugLog } from "./debug";
 import {
@@ -148,6 +153,25 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     });
   };
 
+  // The indicator shows the account the current session's `anthropic`
+  // requests go to, and that account's usage.  `after_provider_response`
+  // fires once the routing `fetch` has returned, so a failover and the
+  // usage read off that response are already in the pool; `turn_end`
+  // keeps the reset countdowns moving; `model_select` clears the indicator
+  // when the session leaves `anthropic`.
+  const indicator = new AccountIndicator(pi.events);
+  indicator.registerSegments();
+  const showSessionAccount = (ctx: IndicatorContext): void => {
+    const account =
+      ctx.model?.provider === PRIMARY_ACCOUNT
+        ? pool.sessionAccount(ctx.sessionManager.getSessionId())
+        : undefined;
+    indicator.show(account, ctx.ui, Date.now());
+  };
+  pi.on("after_provider_response", (_event, ctx) => showSessionAccount(ctx));
+  pi.on("turn_end", (_event, ctx) => showSessionAccount(ctx));
+  pi.on("model_select", (_event, ctx) => showSessionAccount(ctx));
+
   // The project layer needs the session's cwd and trust decision, which only
   // arrive with `session_start`.  An untrusted project's file is never read.
   // `session_start` is awaited before the first prompt, and pi looks the
@@ -163,6 +187,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     }
     reportConfigWarnings(extraProviders.warnings(), ctx);
     attachAccounts(ctx.modelRegistry);
+    showSessionAccount(ctx);
   });
 
   const loadDiagnostics = {
@@ -170,14 +195,18 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     modulePath: fileURLToPath(import.meta.url),
     transportResolved: true,
   };
-  const readDiagnostics = (): ExtensionDiagnostics => {
+  const readDiagnostics = (sessionId: string): ExtensionDiagnostics => {
     // `entries()` re-reads the slots, so the spare is read after it.
     const entries = pool.entries();
     return {
       ...loadDiagnostics,
       shapedProviders: extraProviders.shapedProviders(),
       configWarnings: extraProviders.warnings(),
-      accountPool: { entries, spareSlot: slots.spare() },
+      accountPool: {
+        entries,
+        spareSlot: slots.spare(),
+        sessionAccount: pool.sessionAccount(sessionId)?.id,
+      },
     };
   };
 
@@ -194,6 +223,13 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     getArgumentCompletions: statusArgumentCompletions,
     handler: createStatusCommandHandler(readDiagnostics),
   });
+}
+
+/** The event context fields the account indicator reads. */
+interface IndicatorContext {
+  model: { provider: string } | undefined;
+  sessionManager: { getSessionId(): string };
+  ui: { setStatus(key: string, text: string | undefined): void };
 }
 
 /** The `session_start` context fields warning reporting reads. */

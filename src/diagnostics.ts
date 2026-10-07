@@ -39,6 +39,8 @@ export interface AccountPoolReport {
   entries: readonly AccountPoolEntry[];
   /** The slot `/login` offers for another account, if any. */
   spareSlot: string | undefined;
+  /** The account the invoking session's requests go to, once it has sent one. */
+  sessionAccount: string | undefined;
 }
 
 /**
@@ -57,6 +59,8 @@ export interface StatusCommandContext {
   };
   /** Resolves each provider's stored credential for the account lookup. */
   modelRegistry: ProviderCredentials;
+  /** Identifies the invoking session, to mark the account it is on. */
+  sessionManager: { getSessionId(): string };
 }
 
 /** One provider's account lookup, as the report lists it. */
@@ -134,6 +138,7 @@ function formatShapedProviders(providers: readonly ShapedProvider[]): string {
 function formatAccountPool({
   entries,
   spareSlot,
+  sessionAccount,
 }: AccountPoolReport): string[] {
   const addHint = spareSlot ? ` (add one with /login ${spareSlot})` : "";
   if (entries.length < 2) {
@@ -141,7 +146,10 @@ function formatAccountPool({
   }
   return [
     `  account pool: ${entries.length} accounts${addHint}`,
-    ...entries.map((entry) => `    ${entry.id}: ${describePoolEntry(entry)}`),
+    ...entries.map((entry) => {
+      const marker = entry.id === sessionAccount ? " <- this session" : "";
+      return `    ${entry.id}: ${describePoolEntry(entry)}${marker}`;
+    }),
   ];
 }
 
@@ -234,15 +242,16 @@ function formatConfigWarnings(warnings: readonly string[]): string[] {
  * notification system when a UI is available, or falls back to `console.log`
  * for headless (`-p`) and RPC invocations.
  *
- * @param readDiagnostics Called on every invocation, because some of what the
- *   report shows (project-layer providers) only becomes known after the
- *   command is registered.
+ * @param readDiagnostics Called on every invocation with the invoking
+ *   session's id, because some of what the report shows (project-layer
+ *   providers, the session's account) only becomes known after the command
+ *   is registered.
  */
 export function createStatusCommandHandler(
-  readDiagnostics: () => ExtensionDiagnostics,
+  readDiagnostics: (sessionId: string) => ExtensionDiagnostics,
 ): (args: string, ctx: StatusCommandContext) => Promise<void> {
   return async (args, ctx) => {
-    const diagnostics = readDiagnostics();
+    const diagnostics = readDiagnostics(ctx.sessionManager.getSessionId());
     const providers = Array.from(
       new Set([
         "anthropic",

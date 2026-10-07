@@ -205,6 +205,8 @@ function createFakePi(): {
     options?: SimpleStreamOptions,
   ) => AssistantMessageEventStream;
   fireSessionStart: (ctx: FakeSessionContext) => Promise<void>;
+  fire: (event: string, ctx: FakeSessionContext) => Promise<void>;
+  emitted: Array<[string, unknown]>;
 } {
   const commands = new Map<string, CapturedCommand>();
   // Ordered log of provider lifecycle calls so tests can assert that the
@@ -212,7 +214,8 @@ function createFakePi(): {
   const calls: string[] = [];
   const registrations = new Map<string, ProviderConfig>();
   const nativeRegistrations = new Map<string, Provider>();
-  const sessionStartHandlers: SessionStartHandler[] = [];
+  const handlers = new Map<string, EventHandler[]>();
+  const emitted: Array<[string, unknown]> = [];
   const pi: ExtensionAPI = {
     unregisterProvider(name: string): void {
       calls.push(`unregister:${name}`);
@@ -240,8 +243,13 @@ function createFakePi(): {
     registerCommand(name: string, options: CapturedCommand): void {
       commands.set(name, options);
     },
-    on(event: string, handler: SessionStartHandler): void {
-      if (event === "session_start") sessionStartHandlers.push(handler);
+    on(event: string, handler: EventHandler): void {
+      handlers.set(event, [...(handlers.get(event) ?? []), handler]);
+    },
+    events: {
+      emit(channel: string, data: unknown): void {
+        emitted.push([channel, data]);
+      },
     },
   } as unknown as ExtensionAPI;
 
@@ -259,11 +267,16 @@ function createFakePi(): {
     return registered.streamSimple(model, context, options);
   };
 
-  const fireSessionStart = async (ctx: FakeSessionContext): Promise<void> => {
-    for (const handler of sessionStartHandlers) {
-      await handler({ type: "session_start", reason: "startup" }, ctx);
+  const fire = async (
+    event: string,
+    ctx: FakeSessionContext,
+  ): Promise<void> => {
+    for (const handler of handlers.get(event) ?? []) {
+      await handler({ type: event, reason: "startup" }, ctx);
     }
   };
+  const fireSessionStart = (ctx: FakeSessionContext): Promise<void> =>
+    fire("session_start", ctx);
 
   return {
     pi,
@@ -273,6 +286,8 @@ function createFakePi(): {
     nativeRegistrations,
     dispatch,
     fireSessionStart,
+    fire,
+    emitted,
   };
 }
 
@@ -281,8 +296,13 @@ interface FakeSessionContext {
   cwd: string;
   hasUI: boolean;
   isProjectTrusted: () => boolean;
-  ui: { notify: Mock<(message: string, type?: string) => void> };
+  ui: {
+    notify: Mock<(message: string, type?: string) => void>;
+    setStatus: Mock<(key: string, text: string | undefined) => void>;
+  };
   modelRegistry: FakeModelRegistry;
+  model: { provider: string } | undefined;
+  sessionManager: { getSessionId(): string };
 }
 
 /** The `ModelRegistry` methods the account slots and pool read. */
@@ -318,8 +338,8 @@ function createFakeRegistry(
   };
 }
 
-type SessionStartHandler = (
-  event: { type: "session_start"; reason: string },
+type EventHandler = (
+  event: { type: string; reason: string },
   ctx: FakeSessionContext,
 ) => unknown;
 
@@ -330,8 +350,15 @@ function createSessionContext(
     cwd: overrides.cwd ?? "/nonexistent-project",
     hasUI: overrides.hasUI ?? false,
     isProjectTrusted: overrides.isProjectTrusted ?? (() => false),
-    ui: { notify: vi.fn<(message: string, type?: string) => void>() },
+    ui: {
+      notify: vi.fn<(message: string, type?: string) => void>(),
+      setStatus: vi.fn<(key: string, text: string | undefined) => void>(),
+    },
     modelRegistry: overrides.modelRegistry ?? createFakeRegistry(),
+    model: "model" in overrides ? overrides.model : { provider: "anthropic" },
+    sessionManager: overrides.sessionManager ?? {
+      getSessionId: () => "session-1",
+    },
   };
 }
 
@@ -344,6 +371,7 @@ function createCommandContext(apiKey?: string): StatusCommandContext {
     hasUI: false,
     ui: { notify: vi.fn() },
     modelRegistry: { getApiKeyForProvider: () => Promise.resolve(apiKey) },
+    sessionManager: { getSessionId: () => "session-1" },
   };
 }
 
@@ -780,9 +808,10 @@ describe("index registration: multiple Claude accounts", () => {
       );
     }
 
-    async function sendThroughWrapper(
+    async function routeOneRequest(
       model: Model<"anthropic-messages">,
-    ): Promise<string | null> {
+      response: Response = new Response("ok"),
+    ) {
       // Usage probes: the primary account is busier than the second.
       vi.stubGlobal(
         "fetch",
@@ -802,21 +831,20 @@ describe("index registration: multiple Claude accounts", () => {
       });
 
       const { default: registerExtension } = await import("#src/index");
-      const { pi, dispatch, fireSessionStart } = createFakePi();
-      await registerExtension(pi);
-      await fireSessionStart(
-        createSessionContext({
-          modelRegistry: createFakeRegistry({
-            anthropicOAuth: OAUTH,
-            tokens: { "anthropic-2": SECOND_TOKEN },
-          }),
+      const fake = createFakePi();
+      await registerExtension(fake.pi);
+      const ctx = createSessionContext({
+        modelRegistry: createFakeRegistry({
+          anthropicOAuth: OAUTH,
+          tokens: { "anthropic-2": SECOND_TOKEN },
         }),
-      );
+      });
+      await fake.fireSessionStart(ctx);
 
       const wire = vi.fn((_input: string, _init?: RequestInit) =>
-        Promise.resolve(new Response("ok")),
+        Promise.resolve(response),
       );
-      dispatch(model, CONTEXT, {
+      fake.dispatch(model, CONTEXT, {
         apiKey: OAUTH_TOKEN,
         sessionId: "session-1",
         fetch: wire as unknown as typeof fetch,
@@ -827,12 +855,54 @@ describe("index registration: multiple Claude accounts", () => {
         headers: { authorization: `Bearer ${OAUTH_TOKEN}` },
         body: "{}",
       });
+      return { fake, ctx, wire };
+    }
+
+    async function sendThroughWrapper(
+      model: Model<"anthropic-messages">,
+    ): Promise<string | null> {
+      const { wire } = await routeOneRequest(model);
       const [, sent] = wire.mock.calls[0] ?? [];
       return new Headers(sent?.headers).get("authorization");
     }
 
     test("sends an anthropic session through the least-used account", async () => {
       assert.equal(await sendThroughWrapper(MODEL), `Bearer ${SECOND_TOKEN}`);
+    });
+
+    test("shows the session's account and its usage once a response arrives", async () => {
+      const { fake, ctx } = await routeOneRequest(
+        MODEL,
+        new Response("ok", {
+          headers: {
+            "anthropic-ratelimit-unified-5h-utilization": "0.42",
+            "anthropic-ratelimit-unified-7d-utilization": "0.13",
+          },
+        }),
+      );
+      fake.emitted.length = 0;
+      await fake.fire("after_provider_response", ctx);
+
+      assert.deepEqual(fake.emitted[0], [
+        "powerbar:update",
+        { id: "claude-account", text: "anthropic-2", color: "accent" },
+      ]);
+      assert.deepEqual(ctx.ui.setStatus.mock.calls.at(-1), [
+        "pi-anthropic-auth",
+        "claude anthropic-2 · 5h 42% · week 13%",
+      ]);
+    });
+
+    test("clears the indicator when the session leaves anthropic", async () => {
+      const { fake, ctx } = await routeOneRequest(MODEL);
+      await fake.fire("model_select", {
+        ...ctx,
+        model: { provider: "openai" },
+      });
+      assert.deepEqual(ctx.ui.setStatus.mock.calls.at(-1), [
+        "pi-anthropic-auth",
+        undefined,
+      ]);
     });
 
     test("leaves a request to another named provider on its own account", async () => {
@@ -842,6 +912,20 @@ describe("index registration: multiple Claude accounts", () => {
         `Bearer ${OAUTH_TOKEN}`,
       );
     });
+  });
+});
+
+describe("index registration: account indicator", () => {
+  test("offers its segments to pi-powerbar at load", async () => {
+    const { default: registerExtension } = await import("#src/index");
+    const { pi, emitted } = createFakePi();
+    await registerExtension(pi);
+    assert.deepEqual(
+      emitted
+        .filter(([channel]) => channel === "powerbar:register-segment")
+        .map(([, data]) => (data as { id: string }).id),
+      ["claude-account", "claude-account-5h", "claude-account-week"],
+    );
   });
 });
 

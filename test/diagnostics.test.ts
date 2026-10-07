@@ -26,7 +26,7 @@ const SAMPLE: ExtensionDiagnostics = {
   transportResolved: true,
   shapedProviders: [],
   configWarnings: [],
-  accountPool: { entries: [], spareSlot: undefined },
+  accountPool: { entries: [], spareSlot: undefined, sessionAccount: undefined },
 };
 
 const MAX_PROFILE: AccountProfile = {
@@ -73,6 +73,7 @@ function createStatusContext(
     hasUI: overrides.hasUI ?? false,
     ui: { notify: overrides.notify ?? vi.fn() },
     modelRegistry: { getApiKeyForProvider: () => Promise.resolve(undefined) },
+    sessionManager: { getSessionId: () => "session-1" },
   };
 }
 
@@ -115,6 +116,12 @@ describe("createStatusCommandHandler", () => {
 
   // State such as project-layer providers arrives after the command is
   // registered, so the report must reflect the reader's value at call time.
+  test("reads the diagnostics for the invoking session", async () => {
+    const read = vi.fn((_sessionId: string) => SAMPLE);
+    await createStatusCommandHandler(read)("", createStatusContext());
+    assert.deepEqual(read.mock.calls, [["session-1"]]);
+  });
+
   test("reads the diagnostics when invoked, not when created", async () => {
     let current = SAMPLE;
     const handler = createStatusCommandHandler(() => current);
@@ -149,6 +156,7 @@ describe("createStatusCommandHandler", () => {
         accountPool: {
           entries: [poolEntry("anthropic"), poolEntry("anthropic-2")],
           spareSlot: "anthropic-3",
+          sessionAccount: undefined,
         },
       }));
       await handler("", ctx);
@@ -248,6 +256,7 @@ describe("formatDiagnosticsReport", () => {
         accountPool: {
           entries: [poolEntry("anthropic")],
           spareSlot: "anthropic-2",
+          sessionAccount: undefined,
         },
       });
       assert.match(
@@ -288,12 +297,27 @@ describe("formatDiagnosticsReport", () => {
             }),
           ],
           spareSlot: "anthropic-4",
+          sessionAccount: undefined,
         },
       });
       assert.match(
         report,
         /\n {2}account pool: 3 accounts \(add one with \/login anthropic-4\)\n {4}anthropic: 5h 34%, 7d 12%, 2 active sessions\n {4}anthropic-2: usage not yet seen, unavailable until 2026-10-07 17:20Z, 1 active session\n {4}anthropic-3: usage not reported, 0 active sessions$/,
       );
+    });
+
+    test("marks the account the session is on", () => {
+      const report = formatDiagnosticsReport({
+        ...SAMPLE,
+        accountPool: {
+          entries: [poolEntry("anthropic"), poolEntry("anthropic-2")],
+          spareSlot: undefined,
+          sessionAccount: "anthropic-2",
+        },
+      });
+      assert.match(report, /^ {4}anthropic: [^\n]*sessions$/m);
+      assert.doesNotMatch(report, /^ {4}anthropic: .*<- this session$/m);
+      assert.match(report, /^ {4}anthropic-2: .*<- this session$/m);
     });
   });
 

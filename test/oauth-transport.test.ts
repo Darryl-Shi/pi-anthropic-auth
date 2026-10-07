@@ -7,7 +7,8 @@ import type {
   TranscriptContext,
 } from "@earendil-works/pi-ai";
 import { normalizeContext } from "@earendil-works/pi-ai";
-import { beforeEach, describe, test } from "vitest";
+import { beforeEach, describe, test, vi } from "vitest";
+import { AccountPool } from "#src/account-pool";
 import { isAnthropicOAuthToken } from "#src/oauth-token";
 import { createAnthropicOAuthStreamSimple } from "#src/oauth-transport";
 import {
@@ -265,5 +266,86 @@ describe("createAnthropicOAuthStreamSimple", () => {
     assert.equal(sentBodies.length, 3);
     assert.match(sentBodies[1] ?? "", /cc_version=2\.9\.0\./);
     assert.match(sentBodies[2] ?? "", /cc_version=2\.9\.0\./);
+  });
+
+  describe("account pool", () => {
+    const SECOND_TOKEN = "sk-ant-oat01-second-account";
+
+    function poolWithBusyPrimary() {
+      const pool = new AccountPool({
+        fetchUsage: (token) =>
+          Promise.resolve({
+            fiveHour: token === OAUTH_TOKEN ? 0.8 : 0.1,
+            sevenDay: null,
+            limited: false,
+            resetsAt: null,
+          }),
+      });
+      const directory = {
+        accounts: () => ["anthropic", "anthropic-2"],
+        getApiKeyForProvider: vi.fn((_provider: string) =>
+          Promise.resolve<string | undefined>(SECOND_TOKEN),
+        ),
+      };
+      pool.attach(directory);
+      return { pool, directory };
+    }
+
+    async function sentAuthorization(
+      wrappedWithPool: ReturnType<typeof createAnthropicOAuthStreamSimple>,
+      apiKey: string,
+    ): Promise<string | null> {
+      let received: RequestInit | undefined;
+      const callerFetch = ((_input: unknown, init?: RequestInit) => {
+        received = init;
+        return Promise.resolve(new Response());
+      }) as typeof fetch;
+      wrappedWithPool(MODEL, CONTEXT, {
+        apiKey,
+        fetch: callerFetch,
+        sessionId: "s1",
+      });
+      const sendFetch = calls[0]?.options?.fetch;
+      assert.ok(sendFetch);
+      await sendFetch("https://api.anthropic.com/v1/messages", {
+        headers: { authorization: `Bearer ${apiKey}` },
+        body: "{}",
+      });
+      return new Headers(received?.headers).get("authorization");
+    }
+
+    test("routes an OAuth request to the session's account", async () => {
+      const { pool } = poolWithBusyPrimary();
+      const capturing = createCapturingDelegate();
+      calls = capturing.calls;
+      const withPool = createAnthropicOAuthStreamSimple(capturing.delegate, {
+        pool,
+      });
+
+      assert.equal(
+        await sentAuthorization(withPool, OAUTH_TOKEN),
+        `Bearer ${SECOND_TOKEN}`,
+      );
+    });
+
+    test("never consults the pool for an API-key request", () => {
+      const { pool, directory } = poolWithBusyPrimary();
+      const capturing = createCapturingDelegate();
+      calls = capturing.calls;
+      const callerFetch = (() =>
+        Promise.resolve(new Response())) as typeof fetch;
+
+      createAnthropicOAuthStreamSimple(capturing.delegate, { pool })(
+        MODEL,
+        CONTEXT,
+        {
+          apiKey: API_KEY,
+          fetch: callerFetch,
+        },
+      );
+
+      assert.equal(calls[0]?.options?.fetch, callerFetch);
+      assert.equal(directory.getApiKeyForProvider.mock.calls.length, 0);
+    });
   });
 });

@@ -5,6 +5,8 @@ import type {
   SimpleStreamOptions,
   TranscriptContext,
 } from "@earendil-works/pi-ai";
+import { type AccountPool, PRIMARY_ACCOUNT } from "./account-pool";
+import { createAccountRoutingFetch } from "./account-routing-fetch";
 import { createBillingVersionSync } from "./billing-version-sync";
 import {
   createLearnedClaudeCodeFloor,
@@ -32,6 +34,22 @@ export type AnthropicStreamSimple = (
   context: TranscriptContext,
   options?: SimpleStreamOptions,
 ) => AssistantMessageEventStream;
+
+/** State a wrapper instance shares across every request it shapes. */
+export interface OAuthStreamSimpleCollaborators {
+  /**
+   * The Claude Code version floor learned from Anthropic's
+   * `claude_code_version_too_old` rejections.  It is owned once per
+   * registered wrapper, because it must outlive the per-request billing
+   * version sync; it is injectable so tests can observe it.
+   */
+  learnedFloor?: LearnedClaudeCodeFloor;
+  /**
+   * The Claude accounts `anthropic` requests are spread across.  Without it
+   * every request uses the token Pi resolved.
+   */
+  pool?: AccountPool;
+}
 
 /**
  * Wraps Pi's built-in Anthropic `streamSimple` transport so OAuth request
@@ -74,22 +92,38 @@ export type AnthropicStreamSimple = (
  *   also have recursed, because `registerProvider` bridged this wrapper into
  *   that slot.  The related 0.79.x lazy-registration clobber is precluded by
  *   the >=0.80.8 peer floor (Issue #28, Issue #40).
- * @param learnedFloor The Claude Code version floor learned from Anthropic's
- *   `claude_code_version_too_old` rejections.  It is owned here, once per
- *   registered wrapper, because it must outlive the per-request billing
- *   version sync; the parameter exists so tests can observe it.
+ * @param collaborators State that must outlive a single request; see
+ *   {@link OAuthStreamSimpleCollaborators}.
  */
 export function createAnthropicOAuthStreamSimple(
   delegate: AnthropicStreamSimpleDelegate,
-  learnedFloor: LearnedClaudeCodeFloor = createLearnedClaudeCodeFloor(),
+  collaborators: OAuthStreamSimpleCollaborators = {},
 ): AnthropicStreamSimple {
+  const learnedFloor =
+    collaborators.learnedFloor ?? createLearnedClaudeCodeFloor();
+  const { pool } = collaborators;
   return (model, context, options) => {
     // Resolved once per request rather than per payload: the token decides
     // both whether shaping runs and — as of the billing-version sync — which
     // transport-level collaborators are attached at all, and those decisions
     // must agree.
-    const isOAuthRequest = isAnthropicOAuthToken(options?.apiKey);
+    const apiKey = options?.apiKey;
+    const isOAuthRequest = isAnthropicOAuthToken(apiKey);
     const callerOnPayload = options?.onPayload;
+
+    // Multi-account routing applies only to `anthropic` itself: a request to
+    // another named provider (pi-multi-pass's `anthropic-2`) already names
+    // the account it wants.  It sits between the version sync and the
+    // network, so a version retry stays on the session's account.
+    const routedFetch =
+      isOAuthRequest && pool && model.provider === PRIMARY_ACCOUNT
+        ? createAccountRoutingFetch({
+            pool,
+            sessionId: options?.sessionId,
+            primaryToken: apiKey,
+            baseFetch: options?.fetch,
+          })
+        : options?.fetch;
 
     // Pi's own Claude Code version is only observable at the fetch boundary:
     // pi-ai's `createClient` adds `user-agent: claude-cli/<version>`
@@ -97,7 +131,7 @@ export function createAnthropicOAuthStreamSimple(
     // constructed only for OAuth requests, so an API-key request keeps the
     // caller's `fetch` (or none) untouched.
     const versionSync = isOAuthRequest
-      ? createBillingVersionSync(learnedFloor, options.fetch)
+      ? createBillingVersionSync(learnedFloor, routedFetch)
       : undefined;
 
     const composeCallerOnPayload = async (

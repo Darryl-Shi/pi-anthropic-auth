@@ -46,6 +46,31 @@ pi -e npm:@gotgenes/pi-anthropic-auth
 2. Select a Claude Pro/Max model and start chatting. The extension handles compatibility transparently.
 3. API-key behavior is unaffected; the extension's changes apply only to OAuth sessions.
 
+### Multiple Claude accounts
+
+If you have more than one Claude Pro/Max subscription, the extension spreads your `anthropic` sessions across all of them.
+You keep selecting `anthropic/<model>` exactly as before; the model list does not change.
+
+To add an account, run `/login` and pick **Anthropic account 2**, then sign in with the second subscription.
+It is Pi's own Claude login flow, including the headless copy-code option.
+Once account 2 is logged in, `/login` offers **Anthropic account 3**, and so on: there is always exactly one free slot.
+Account 1 is the one you logged in with `/login anthropic`.
+To remove an account, `/logout` and pick it.
+Pi stores, refreshes, and removes these logins like any other, so there is no config to edit.
+
+How sessions are placed:
+
+1. A session's first request goes to the account with the lowest usage, judged by the higher of its 5-hour and 7-day utilization as Anthropic reports it.
+   That figure includes your claude.ai, Claude Code, and other pi usage, so the balance is real rather than local.
+   Accounts within 5 points of each other count as tied, and the tie goes to the account serving fewer active sessions.
+2. The session then stays on that account, compaction included, so its prompt cache keeps hitting.
+3. If the account is rate limited (429) or its token is rejected (401), it is set aside until it recovers, the session moves to the next best account, and the request is retried there once.
+   The move costs that one session a cache miss.
+
+With a single account nothing changes and no extra requests are made.
+`/anthropic-auth:status` shows each account's usage, any account set aside, and how many sessions it serves.
+Requests to another named provider (such as pi-multi-pass's `anthropic-2`, below) stay on that provider's account; only `anthropic` requests are balanced.
+
 ### Additional Anthropic subscriptions
 
 Pi applies an extension's transport per provider **name**, so by default only the provider named `anthropic` is shaped.
@@ -78,6 +103,9 @@ pi-anthropic-auth diagnostics
   module:  /root/.pi/agent/.../src/index.ts
   built-in Anthropic transport: resolved
   shaped providers: anthropic, anthropic-2 (global)
+  account pool: 2 accounts (add one with /login anthropic-3)
+    anthropic: 5h 34%, 7d 12%, 2 active sessions
+    anthropic-2: 5h 3%, 7d 40%, 1 active session
   accounts:
     anthropic: claude_max, rate limit default_claude_max_20x, subscription active, extra usage off
     anthropic-2: claude_team, seat team_standard, rate limit default_raven, subscription active, extra usage on
@@ -86,6 +114,7 @@ pi-anthropic-auth diagnostics
 The `module` line shows which copy of the extension loaded.
 If the command is not found, the extension is not loaded at all.
 The `shaped providers` line lists `anthropic` and every provider named in a config file, with the file (`global` or `project`) that named it.
+The `account pool` block lists the accounts `anthropic` sessions are spread across (see [Multiple Claude accounts](#multiple-claude-accounts)), with each one's latest usage, any time it is set aside until, and its active sessions.
 
 The `accounts` block asks Anthropic which subscription each shaped provider's OAuth login belongs to: plan type, seat, rate-limit tier, subscription status, and whether extra usage is enabled.
 A provider logged in with an API key, with no login, or whose token could not be refreshed shows `no OAuth login`; a failed lookup shows `unavailable` with the reason.

@@ -57,6 +57,7 @@ The current implementation does the following:
 7. Recovers from a `claude_code_version_too_old` rejection by retrying once at the floor Anthropic names, remembering that floor for later requests, and appending a hint to the error when it cannot recover (Issue #75)
 8. Gates all shaping on the `sk-ant-oat` OAuth access-token prefix, so API-key and non-Anthropic requests pass through untouched
 9. Registers the same wrapper on any extra provider named in the extension's config file, for Anthropic OAuth subscriptions another extension registers under its own name (pi-multi-pass's `anthropic-2`, Issue #70)
+10. Spreads `anthropic` OAuth sessions across several Claude accounts: extra accounts are login-only `anthropic-N` providers registered at `session_start` (always one spare `/login` slot), each session is pinned to the least-used account by Anthropic's own utilization, and a 429 or 401 fails the session over (see `docs/architecture.md`, "Account pool")
 
 It wraps, but does not reimplement, Pi's built-in Anthropic streaming transport.
 The wrapper delegates to Pi's own built-in Anthropic `streamSimple` transport and injects two steps: an `onPayload` shaping step, and an `options.fetch` wrapper for the version reconciliation and rejection recovery, which need the built request's headers and the response.
@@ -90,9 +91,10 @@ Keep compatibility logic in small helpers so it is easy to adjust without touchi
 
 The main extension entrypoint is `src/index.ts`.
 
-It uses one Pi extension seam:
+It uses two Pi extension seams:
 
 1. `pi.registerProvider("anthropic", { api: "anthropic-messages", streamSimple })`, plus the same `{ api, streamSimple }` registration for each provider named in `<agentDir>/extensions/pi-anthropic-auth/config.json`, and — from a `session_start` handler, only for a trusted project — in `<cwd>/.pi/extensions/pi-anthropic-auth/config.json`
+2. `pi.registerProvider(provider: Provider)` (the native overload), from `session_start`, for the login-only account slots `anthropic-2`, … whose `auth.oauth` is the registry's own `anthropic` OAuth method; the account pool reads their tokens through `ctx.modelRegistry.getApiKeyForProvider`
 
 The `streamSimple` wrapper is the single shaping point.
 It delegates to Pi's built-in Anthropic `streamSimple` transport (resolved at runtime by `src/host-transport.ts`) while injecting an `onPayload` step that runs all provider-specific logic (billing header injection, system prompt shaping).
@@ -130,6 +132,12 @@ Current source layout:
 14. `src/extension-config.ts`: the config file paths and a parser that turns malformed files and entries into warnings instead of throwing (Issue #70)
 15. `src/extra-provider-shaping.ts`: registers the wrapper on each provider the config names, never unregistering it, and records the naming layer and warnings for the status command (Issue #70)
 16. `src/account-profile.ts`: looks up the Anthropic account behind a provider's OAuth login via `GET /api/oauth/profile`, never throwing, for the status command (Issue #80)
+17. `src/oauth-token.ts`: the `sk-ant-oat` OAuth token check
+18. `src/account-slots.ts`: registers login-only `anthropic-N` providers reusing the built-in Anthropic OAuth flow, every logged-in slot plus one spare, never replacing a provider another extension owns
+19. `src/account-pool.ts`: session-to-account pins, per-account usage and set-aside times, placement and failover
+20. `src/account-balancer.ts`: the pure placement rule (least load, near-ties to fewer active sessions)
+21. `src/account-usage.ts`: usage from the `anthropic-ratelimit-unified-*` headers (0..1) and `GET /api/oauth/usage` (0..100)
+22. `src/account-routing-fetch.ts`: per-request `fetch` that swaps the bearer token to the session's account and retries once on a 429 or 401
 
 ### Project Skills
 
@@ -507,6 +515,7 @@ Current suites map roughly to:
 12. `test/extra-provider-shaping.test.ts` — one `{ api, streamSimple }` registration per named provider, no unregister, first layer wins, and per-layer warning replacement.
 13. `test/managed-effort-drift.test.ts` — the offline drift alarm for per-message effort: Pi's catalog still flags a managed-effort model, and for every model it flags, Pi still carries historical and active effort in content-less system messages, and OAuth shaping keeps every one of them (PR #79).
 14. `test/account-profile.test.ts` — the profile lookup: no request without an OAuth token, the request's headers, tolerant field parsing, and each `unavailable` reason (Issue #80).
+15. `test/account-usage.test.ts`, `test/account-balancer.test.ts`, `test/account-pool.test.ts`, `test/account-routing-fetch.test.ts`, `test/account-slots.test.ts` — the account pool: usage parsing in both formats, placement and tie-breaks, pinning, failover, the token swap, and slot discovery with one spare.
 
 Priority areas for new tests:
 

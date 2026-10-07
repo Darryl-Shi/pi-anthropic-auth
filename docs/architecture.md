@@ -199,6 +199,18 @@ The session is re-pinned to the best remaining account that is not set aside, an
 When no other account is usable, the original response is returned.
 
 With fewer than two accounts the pool is inactive: no usage request is made and the request is sent exactly as Pi built it.
+The response's rate-limit headers are still recorded for the primary account, for the indicator below.
+
+### Account indicator
+
+`AccountIndicator` (`src/account-indicator.ts`) shows the account the current session is pinned to (`AccountPool.sessionAccount`, keyed by `ctx.sessionManager.getSessionId()`, the same id Pi passes as `options.sessionId`) and that account's usage.
+It refreshes on `after_provider_response`, which Pi emits after the routing `fetch` has returned, so a failover and the usage read off that response are already in the pool; on `turn_end`, to move the reset countdowns; and on `session_start` and `model_select`, clearing itself when the model's provider is not `anthropic`.
+
+It publishes twice, since a user sees one or the other:
+
+1. pi-powerbar segments (`claude-account`, `claude-account-5h`, `claude-account-week`), over pi's event bus with pi-powerbar's `powerbar:register-segment` and `powerbar:update` payloads, so there is no import of pi-powerbar.
+   pi-powerbar's `sub-hourly`/`sub-weekly` segments come from pi-usage, which reads the token stored under `anthropic` in `auth.json`, so they cannot follow a session onto another account.
+2. Pi's footer status (`ctx.ui.setStatus`), for users without pi-powerbar; pi-powerbar replaces the footer, so the two never show at once.
 
 ## Assistant block ordering is not normalized
 

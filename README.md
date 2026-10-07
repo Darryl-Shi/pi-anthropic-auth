@@ -69,7 +69,24 @@ How sessions are placed:
    The move costs that one session a cache miss.
 
 With a single account nothing changes and no extra requests are made.
-`/anthropic-auth:status` shows each account's usage, any account set aside, and how many sessions it serves.
+`/anthropic-auth:status` shows each account's usage, any account set aside, and how many sessions it serves, and marks the account the current session is on.
+
+#### Which account a session is on
+
+The extension shows the account the current `anthropic` session is using and that account's 5-hour and weekly usage, with the time until each window resets.
+The figures come from the rate-limit headers on each response, so they cost no extra request and appear after the session's first response.
+
+With [pi-powerbar](https://github.com/juanibiapina/pi-powerbar), it offers three segments: **Claude Account**, **Claude Account 5h**, and **Claude Account Week**.
+Add them with `/extension-settings`, under the powerbar's left or right segments.
+pi-powerbar's own **Sub Hourly** and **Sub Weekly** segments come from pi-usage, which only reads the `/login anthropic` account, so they show the wrong account whenever a session runs on another one; replace them with these.
+
+Without pi-powerbar, the same line appears in Pi's footer:
+
+```text
+claude anthropic-2 · 5h 42% (2h13m) · week 13% (3d4h)
+```
+
+An account that is set aside shows `limited` with the time until it recovers.
 Requests to another named provider (such as pi-multi-pass's `anthropic-2`, below) stay on that provider's account; only `anthropic` requests are balanced.
 If another extension already provides `anthropic-2`, `anthropic-3`, … with a Claude OAuth login, the extension uses that login as an account instead of registering its own slot, so those subscriptions join the `anthropic` pool too.
 
@@ -107,7 +124,7 @@ pi-anthropic-auth diagnostics
   shaped providers: anthropic, anthropic-2 (global)
   account pool: 2 accounts (add one with /login anthropic-3)
     anthropic: 5h 34%, 7d 12%, 2 active sessions
-    anthropic-2: 5h 3%, 7d 40%, 1 active session
+    anthropic-2: 5h 3%, 7d 40%, 1 active session <- this session
   accounts:
     anthropic: claude_max, rate limit default_claude_max_20x, subscription active, extra usage off
     anthropic-2: claude_team, seat team_standard, rate limit default_raven, subscription active, extra usage on
@@ -116,7 +133,7 @@ pi-anthropic-auth diagnostics
 The `module` line shows which copy of the extension loaded.
 If the command is not found, the extension is not loaded at all.
 The `shaped providers` line lists `anthropic` and every provider named in a config file, with the file (`global` or `project`) that named it.
-The `account pool` block lists the accounts `anthropic` sessions are spread across (see [Multiple Claude accounts](#multiple-claude-accounts)), with each one's latest usage, any time it is set aside until, and its active sessions.
+The `account pool` block lists the accounts `anthropic` sessions are spread across (see [Multiple Claude accounts](#multiple-claude-accounts)), with each one's latest usage, any time it is set aside until, and its active sessions; `<- this session` marks the account the current session is on.
 
 The `accounts` block asks Anthropic which subscription each shaped provider's OAuth login belongs to: plan type, seat, rate-limit tier, subscription status, and whether extra usage is enabled.
 A provider logged in with an API key, with no login, or whose token could not be refreshed shows `no OAuth login`; a failed lookup shows `unavailable` with the reason.

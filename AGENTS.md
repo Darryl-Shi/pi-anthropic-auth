@@ -58,6 +58,7 @@ The current implementation does the following:
 8. Gates all shaping on the `sk-ant-oat` OAuth access-token prefix, so API-key and non-Anthropic requests pass through untouched
 9. Registers the same wrapper on any extra provider named in the extension's config file, for Anthropic OAuth subscriptions another extension registers under its own name (pi-multi-pass's `anthropic-2`, Issue #70)
 10. Spreads `anthropic` OAuth sessions across several Claude accounts: extra accounts are login-only `anthropic-N` providers registered at `session_start` (always one spare `/login` slot), each session is pinned to the least-used account by Anthropic's own utilization, and a 429 or 401 fails the session over (see `docs/architecture.md`, "Account pool")
+11. Shows the session's account and its 5-hour and weekly usage as pi-powerbar segments (over pi's event bus) and a footer status, because pi-powerbar's own usage segments read only the `anthropic` login
 
 It wraps, but does not reimplement, Pi's built-in Anthropic streaming transport.
 The wrapper delegates to Pi's own built-in Anthropic `streamSimple` transport and injects two steps: an `onPayload` shaping step, and an `options.fetch` wrapper for the version reconciliation and rejection recovery, which need the built request's headers and the response.
@@ -138,6 +139,7 @@ Current source layout:
 20. `src/account-balancer.ts`: the pure placement rule (least load, near-ties to fewer active sessions)
 21. `src/account-usage.ts`: usage from the `anthropic-ratelimit-unified-*` headers (0..1) and `GET /api/oauth/usage` (0..100)
 22. `src/account-routing-fetch.ts`: per-request `fetch` that swaps the bearer token to the session's account and retries once on a 429 or 401
+23. `src/account-indicator.ts`: the session's account and usage as pi-powerbar segments and a footer status
 
 ### Project Skills
 
@@ -516,6 +518,7 @@ Current suites map roughly to:
 13. `test/managed-effort-drift.test.ts` — the offline drift alarm for per-message effort: Pi's catalog still flags a managed-effort model, and for every model it flags, Pi still carries historical and active effort in content-less system messages, and OAuth shaping keeps every one of them (PR #79).
 14. `test/account-profile.test.ts` — the profile lookup: no request without an OAuth token, the request's headers, tolerant field parsing, and each `unavailable` reason (Issue #80).
 15. `test/account-usage.test.ts`, `test/account-balancer.test.ts`, `test/account-pool.test.ts`, `test/account-routing-fetch.test.ts`, `test/account-slots.test.ts` — the account pool: usage parsing in both formats, placement and tie-breaks, pinning, failover, the token swap, and slot discovery with one spare.
+16. `test/account-indicator.test.ts` — the indicator's segments, colors, countdowns, limited marker, and footer status.
 
 Priority areas for new tests:
 

@@ -31,13 +31,57 @@ const HEADER = "anthropic-ratelimit-unified";
 /** Year 5138: anything later is not a reset time, and would not format. */
 const MAX_EPOCH_SECONDS = 1e11;
 
+const FIVE_HOUR_MS = 5 * 60 * 60_000;
+const SEVEN_DAY_MS = 7 * 24 * 60 * 60_000;
 /**
- * The account's load for balancing: its most-used window, or 0 when neither
- * window is known.
+ * The least share of a window counted as left before it resets, so a reset
+ * moments away (or a clock skewed against the server's) cannot make one
+ * account's headroom unbounded.
  */
-export function usageLoad(usage: AccountUsage | undefined): number {
-  if (!usage) return 0;
-  return Math.max(usage.fiveHour ?? 0, usage.sevenDay ?? 0);
+const MIN_WINDOW_LEFT = 0.01;
+
+/**
+ * The account's headroom for balancing: how fast it can be used until each
+ * window resets without exhausting it, as a multiple of that window's even
+ * pace, for its tighter window.
+ *
+ * 1 is a fresh window.  Above 1, the window resets before its unused share
+ * could be spent at even pace, so capacity left there is about to be lost;
+ * below 1, the account is ahead of pace; 0 is exhausted.  An account 80% used
+ * that resets in half an hour (2.0) therefore ranks above one 40% used with
+ * four and a half hours left (0.67).
+ *
+ * A window whose reset time is unknown is assumed to have a whole window
+ * left, so its headroom is its unused share; one whose reset has passed is
+ * fresh.  A window whose utilization is unknown is ignored, and an account
+ * with neither window known has headroom 1.
+ */
+export function usageHeadroom(
+  usage: AccountUsage | undefined,
+  now: number,
+): number {
+  if (!usage) return 1;
+  const windows = [
+    windowHeadroom(usage.fiveHour, usage.fiveHourResetsAt, FIVE_HOUR_MS, now),
+    windowHeadroom(usage.sevenDay, usage.sevenDayResetsAt, SEVEN_DAY_MS, now),
+  ].filter((headroom): headroom is number => headroom !== null);
+  return windows.length === 0 ? 1 : Math.min(...windows);
+}
+
+function windowHeadroom(
+  utilization: number | null,
+  resetsAt: number | null,
+  windowMs: number,
+  now: number,
+): number | null {
+  if (utilization === null) return null;
+  if (resetsAt === null) return 1 - utilization;
+  if (resetsAt <= now) return 1;
+  const left = Math.min(
+    Math.max((resetsAt - now) / windowMs, MIN_WINDOW_LEFT),
+    1,
+  );
+  return (1 - utilization) / left;
 }
 
 /**

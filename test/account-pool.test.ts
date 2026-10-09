@@ -90,6 +90,23 @@ describe("AccountPool", () => {
       });
     });
 
+    test("prefers a more-used account whose window resets soon", async () => {
+      const hour = 60 * 60_000;
+      usageByToken.set(
+        PRIMARY_TOKEN,
+        usage(0.4, { fiveHourResetsAt: now + 4.5 * hour }),
+      );
+      usageByToken.set(
+        SECOND_TOKEN,
+        usage(0.8, { fiveHourResetsAt: now + 0.5 * hour }),
+      );
+
+      assert.equal(
+        (await pool.acquire("s1", PRIMARY_TOKEN))?.accountId,
+        "anthropic-2",
+      );
+    });
+
     test("spreads sessions that start together across equally used accounts", async () => {
       const first = await pool.acquire("s1", PRIMARY_TOKEN);
       const second = await pool.acquire("s2", PRIMARY_TOKEN);

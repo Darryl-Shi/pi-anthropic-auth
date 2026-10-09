@@ -2,7 +2,7 @@ import { type AccountCandidate, chooseAccount } from "./account-balancer";
 import {
   type AccountUsage,
   fetchAccountUsage,
-  usageLoad,
+  usageHeadroom,
 } from "./account-usage";
 import { debugLog } from "./debug";
 import { isAnthropicOAuthToken } from "./oauth-token";
@@ -78,8 +78,9 @@ interface ObservedUsage {
  * Spreads Anthropic OAuth requests across several Claude subscriptions while
  * keeping each session on one account, so its prompt cache keeps hitting.
  *
- * A session is pinned on its first request to the account with the lowest
- * server-reported utilization (see {@link chooseAccount}).  It stays there
+ * A session is pinned on its first request to the account with the most
+ * headroom: server-reported utilization weighed against how soon each window
+ * resets (see {@link chooseAccount} and {@link usageHeadroom}).  It stays there
  * until that account is rate limited, when {@link failover} moves it.
  *
  * Utilization comes from Anthropic, not from local counting, so usage from
@@ -264,7 +265,7 @@ export class AccountPool {
       .filter((id) => tokens.has(id) && (allowLimited || !this.isLimited(id)))
       .map((id) => ({
         id,
-        load: usageLoad(this.observed.get(id)?.usage),
+        headroom: usageHeadroom(this.observed.get(id)?.usage, now),
         limitedUntil: this.isLimited(id) ? (this.limits.get(id) ?? null) : null,
         activeSessions: this.activeSessions(id),
       }));

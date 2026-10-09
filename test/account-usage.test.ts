@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, test, vi } from "vitest";
 import {
+  type AccountUsage,
   fetchAccountUsage,
   parseUsageResponse,
   readUsageHeaders,
-  usageLoad,
+  usageHeadroom,
 } from "#src/account-usage";
 
 describe("readUsageHeaders", () => {
@@ -113,32 +114,101 @@ describe("parseUsageResponse", () => {
   });
 });
 
-describe("usageLoad", () => {
-  test("is the most-used window", () => {
+describe("usageHeadroom", () => {
+  const NOW = Date.parse("2026-10-07T12:00:00Z");
+  const HOUR = 60 * 60_000;
+  const DAY = 24 * HOUR;
+
+  function usage(overrides: Partial<AccountUsage> = {}): AccountUsage {
+    return {
+      fiveHour: null,
+      sevenDay: null,
+      limited: false,
+      resetsAt: null,
+      fiveHourResetsAt: null,
+      sevenDayResetsAt: null,
+      ...overrides,
+    };
+  }
+
+  test("is the unused share of the tighter window when no reset is known", () => {
     assert.equal(
-      usageLoad({
-        fiveHour: 0.2,
-        sevenDay: 0.7,
-        limited: false,
-        resetsAt: null,
-        fiveHourResetsAt: null,
-        sevenDayResetsAt: null,
-      }),
-      0.7,
+      usageHeadroom(usage({ fiveHour: 0.2, sevenDay: 0.75 }), NOW),
+      0.25,
     );
   });
 
-  test("is 0 when nothing is known", () => {
-    assert.equal(usageLoad(undefined), 0);
+  test("is 1, a fresh window, when nothing is known", () => {
+    assert.equal(usageHeadroom(undefined, NOW), 1);
+    assert.equal(usageHeadroom(usage(), NOW), 1);
+  });
+
+  test("divides the unused share by the share of the window left", () => {
+    // 60% unused with 2.5 of 5 hours left: 1.2x the even pace is sustainable.
     assert.equal(
-      usageLoad({
-        fiveHour: null,
-        sevenDay: null,
-        limited: false,
-        resetsAt: null,
-        fiveHourResetsAt: null,
-        sevenDayResetsAt: null,
-      }),
+      usageHeadroom(
+        usage({ fiveHour: 0.4, fiveHourResetsAt: NOW + 2.5 * HOUR }),
+        NOW,
+      ),
+      1.2,
+    );
+  });
+
+  test("ranks a heavily used window that resets soon above a lightly used one that does not", () => {
+    const resetsSoon = usageHeadroom(
+      usage({ fiveHour: 0.8, fiveHourResetsAt: NOW + 0.5 * HOUR }),
+      NOW,
+    );
+    const resetsLate = usageHeadroom(
+      usage({ fiveHour: 0.4, fiveHourResetsAt: NOW + 4.5 * HOUR }),
+      NOW,
+    );
+    assert.ok(resetsSoon > resetsLate, `${resetsSoon} <= ${resetsLate}`);
+  });
+
+  test("is bound by the 7-day window when it is tighter", () => {
+    // 5h: 0.9 / 0.1 = 9; 7d: 0.25 / (3.5 / 7) = 0.5.
+    assert.equal(
+      usageHeadroom(
+        usage({
+          fiveHour: 0.1,
+          fiveHourResetsAt: NOW + 0.5 * HOUR,
+          sevenDay: 0.75,
+          sevenDayResetsAt: NOW + 3.5 * DAY,
+        }),
+        NOW,
+      ),
+      0.5,
+    );
+  });
+
+  test("treats a window whose reset has passed as fresh", () => {
+    assert.equal(
+      usageHeadroom(usage({ fiveHour: 0.95, fiveHourResetsAt: NOW }), NOW),
+      1,
+    );
+  });
+
+  test("caps a reset moments away at 1% of the window", () => {
+    assert.equal(
+      usageHeadroom(usage({ fiveHour: 0.5, fiveHourResetsAt: NOW + 1 }), NOW),
+      50,
+    );
+  });
+
+  test("never credits more than a full window left", () => {
+    assert.equal(
+      usageHeadroom(
+        usage({ fiveHour: 0.5, fiveHourResetsAt: NOW + 10 * HOUR }),
+        NOW,
+      ),
+      0.5,
+    );
+  });
+
+  test("is 0 for an exhausted window that has not reset", () => {
+    assert.equal(
+      usageHeadroom(usage({ fiveHour: 1, fiveHourResetsAt: NOW + HOUR }), NOW),
       0,
     );
   });

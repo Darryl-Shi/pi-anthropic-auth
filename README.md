@@ -60,9 +60,10 @@ Pi stores, refreshes, and removes these logins like any other, so there is no co
 
 How sessions are placed:
 
-1. A session's first request goes to the account with the lowest usage, judged by the higher of its 5-hour and 7-day utilization as Anthropic reports it.
-   That figure includes your claude.ai, Claude Code, and other pi usage, so the balance is real rather than local.
-   Accounts within 5 points of the least-used one count as tied, and the tie goes to the account serving fewer active sessions.
+1. A session's first request goes to the account with the most headroom: for each of its 5-hour and 7-day windows, the unused share divided by the share of the window left before it resets, taking the tighter of the two.
+   An account 80% used that resets in half an hour therefore wins over one 40% used with four and a half hours left, because its remaining capacity is about to be lost while the other's is not.
+   Utilization comes from Anthropic, so it includes your claude.ai, Claude Code, and other pi usage, and the balance is real rather than local.
+   Accounts within 0.05 of the best headroom (5% of it, above 1) count as tied, and the tie goes to the account serving fewer active sessions.
    Session counts are kept per pi process; usage is shared, because it comes from Anthropic.
 2. The session then stays on that account, compaction included, so its prompt cache keeps hitting.
 3. If the account is rate limited (429) or its token is rejected (401), it is set aside until it recovers, the session moves to the next best account, and the request is retried there once.

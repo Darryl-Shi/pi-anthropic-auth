@@ -57,7 +57,7 @@ The current implementation does the following:
 7. Recovers from a `claude_code_version_too_old` rejection by retrying once at the floor Anthropic names, remembering that floor for later requests, and appending a hint to the error when it cannot recover (Issue #75)
 8. Gates all shaping on the `sk-ant-oat` OAuth access-token prefix, so API-key and non-Anthropic requests pass through untouched
 9. Registers the same wrapper on any extra provider named in the extension's config file, for Anthropic OAuth subscriptions another extension registers under its own name (pi-multi-pass's `anthropic-2`, Issue #70)
-10. Spreads `anthropic` OAuth sessions across several Claude accounts: extra accounts are login-only `anthropic-N` providers registered at `session_start` (always one spare `/login` slot), each session is pinned to the least-used account by Anthropic's own utilization, and a 429 or 401 fails the session over (see `docs/architecture.md`, "Account pool")
+10. Spreads `anthropic` OAuth sessions across several Claude accounts: extra accounts are login-only `anthropic-N` providers registered at `session_start` (always one spare `/login` slot), each session is pinned to the account with the most headroom (Anthropic's own utilization weighed against each window's time to reset), and a 429 or 401 fails the session over (see `docs/architecture.md`, "Account pool")
 11. Shows the session's account and its 5-hour and weekly usage as pi-powerbar segments (over pi's event bus) and a footer status, because pi-powerbar's own usage segments read only the `anthropic` login
 
 It wraps, but does not reimplement, Pi's built-in Anthropic streaming transport.
@@ -136,8 +136,8 @@ Current source layout:
 17. `src/oauth-token.ts`: the `sk-ant-oat` OAuth token check
 18. `src/account-slots.ts`: registers login-only `anthropic-N` providers reusing the built-in Anthropic OAuth flow, every logged-in slot plus one spare, never replacing a provider another extension owns
 19. `src/account-pool.ts`: session-to-account pins, per-account usage and set-aside times, placement and failover
-20. `src/account-balancer.ts`: the pure placement rule (least load, near-ties to fewer active sessions)
-21. `src/account-usage.ts`: usage from the `anthropic-ratelimit-unified-*` headers (0..1) and `GET /api/oauth/usage` (0..100)
+20. `src/account-balancer.ts`: the pure placement rule (most headroom, near-ties to fewer active sessions)
+21. `src/account-usage.ts`: usage from the `anthropic-ratelimit-unified-*` headers (0..1) and `GET /api/oauth/usage` (0..100), and the reset-aware headroom the balancer ranks by
 22. `src/account-routing-fetch.ts`: per-request `fetch` that swaps the bearer token to the session's account and retries once on a 429 or 401
 23. `src/account-indicator.ts`: the session's account and usage as pi-powerbar segments and a footer status
 

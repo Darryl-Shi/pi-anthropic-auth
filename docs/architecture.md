@@ -181,9 +181,14 @@ Requests without a session id share one pin, so they also keep one account rathe
 While the pool has a single account, sessions are still pinned to it, so a session already running when a second account is added keeps its cache.
 Concurrent first requests of one session share one placement, and concurrent placements share one usage probe per account.
 
-A new session goes to the account with the lowest load, the higher of its 5-hour and 7-day utilization (`chooseAccount`, `src/account-balancer.ts`).
-Accounts within 5 points of the minimum are tied, and the tie goes to the account with fewer sessions active in the last hour, then to pool order; utilization only moves after a request lands, so sessions starting together would otherwise all pick one account.
-Session counts live in the extension instance, so separate pi processes balance on utilization alone.
+A new session goes to the account with the most headroom (`chooseAccount`, `src/account-balancer.ts`; `usageHeadroom`, `src/account-usage.ts`).
+A window's headroom is its unused share divided by the share of the window left before it resets: the rate the account can sustain until the reset, as a multiple of the window's even pace.
+An account's headroom is that of its tighter window.
+So an account 80% used that resets in half an hour (2.0) wins over one 40% used with four and a half hours left (0.67): capacity left in a window about to reset is spent first, since it is lost otherwise.
+A window whose reset time is unknown is assumed to have a whole window left, which reduces headroom to the unused share; one whose reset has passed counts as fresh (1); the share left is floored at 1%, so a reset moments away cannot dominate unboundedly.
+The two windows are compared at their own even paces, which assumes neither is structurally tighter than the other; the per-window capacities are not reported, so nothing better is available.
+Accounts within 0.05 of the best headroom (5% of it when it exceeds 1) are tied, and the tie goes to the account with fewer sessions active in the last hour, then to pool order; utilization only moves after a request lands, so sessions starting together would otherwise all pick one account.
+Session counts live in the extension instance, so separate pi processes balance on headroom alone.
 
 Utilization is Anthropic's, not counted locally, so claude.ai, Claude Code, and other pi processes are balanced too.
 Every OAuth response carries `anthropic-ratelimit-unified-{5h,7d}-utilization` as a 0..1 fraction plus `-status` and `-reset`, and the routing `fetch` feeds them back to the pool.
@@ -375,7 +380,7 @@ pi-observational-memory 3.1.x is the worked example: `resolveWorkerStreamSimple`
   The handler looks up every shaped provider's account in parallel on each run; the email and organization name appear only with `--account`, because a personal organization is named after its email (Issue #80).
 - `src/account-slots.ts` — registers the login-only `anthropic-N` providers: every logged-in slot plus one spare.
 - `src/account-pool.ts` — pins sessions to accounts, tracks each account's usage and set-aside time, and fails sessions over.
-- `src/account-balancer.ts` — the pure placement rule: least load, near-ties to fewer active sessions.
+- `src/account-balancer.ts` — the pure placement rule: most headroom, near-ties to fewer active sessions.
 - `src/account-usage.ts` — reads usage from the unified rate-limit headers and from `GET /api/oauth/usage`.
 - `src/account-routing-fetch.ts` — the per-request `fetch` that swaps the bearer token to the session's account and retries once on a 429 or 401; any failure inside the pool degrades to the request as Pi built it.
 - `src/oauth-token.ts` — the `sk-ant-oat` OAuth token check.

@@ -1,8 +1,6 @@
 import { fileURLToPath } from "node:url";
-import {
-  type ExtensionAPI,
-  getAgentDir,
-} from "@earendil-works/pi-coding-agent";
+import type { Provider } from "@earendil-works/pi-ai";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { AccountIndicator } from "./account-indicator";
 import {
   type AccountDirectory,
@@ -10,6 +8,7 @@ import {
   PRIMARY_ACCOUNT,
 } from "./account-pool";
 import { AccountSlots, type SlotRegistry } from "./account-slots";
+import { resolveAgentDir } from "./agent-dir";
 import { debugLog } from "./debug";
 import {
   createStatusCommandHandler,
@@ -22,6 +21,12 @@ import {
   projectConfigPath,
 } from "./extension-config";
 import { ExtraProviderShaping } from "./extra-provider-shaping";
+import {
+  authPathOf,
+  HeadlessAccountDirectory,
+  hasAnthropicOAuthLogin,
+  storedSlotRegistry,
+} from "./headless-accounts";
 import { resolveBuiltinAnthropicStreamSimple } from "./host-transport";
 import { createAnthropicOAuthStreamSimple } from "./oauth-transport";
 
@@ -121,9 +126,14 @@ export default async function (pi: ExtensionAPI): Promise<void> {
   // file, and each is registered with the same wrapper.  The global layer is
   // applied here, so a named provider is shaped before any request reaches
   // it, like `anthropic`.
+  //
+  // The agent dir is the one this copy was installed into, which is not
+  // `getAgentDir()` in a host that runs pi's model runtime over its own dir
+  // (see `resolveAgentDir`).
+  const agentDir = resolveAgentDir(import.meta.url);
   const extraProviders = new ExtraProviderShaping(pi, streamSimple);
   extraProviders.apply(
-    loadExtensionConfig(globalConfigPath(getAgentDir())),
+    loadExtensionConfig(globalConfigPath(agentDir)),
     "global",
   );
 
@@ -152,6 +162,25 @@ export default async function (pi: ExtensionAPI): Promise<void> {
         registry.getApiKeyForProvider(provider),
     });
   };
+
+  // A host that loads extensions only for their providers never starts a
+  // session, so `session_start` never registers the slots or attaches the
+  // pool, and provider registrations after load never reach its runtime.
+  // So, when the `anthropic` login is a Claude subscription, the slots are
+  // registered now, from `auth.json`, and the pool reads its accounts from
+  // there until a session (if one ever starts) attaches the registry.
+  const authPath = authPathOf(agentDir);
+  if (hasAnthropicOAuthLogin(authPath)) {
+    const anthropic = await builtinAnthropicProvider();
+    if (anthropic) {
+      try {
+        slots.refresh(storedSlotRegistry(authPath, anthropic));
+      } catch (error) {
+        debugLog("account-slots-preload-failed", { error: String(error) });
+      }
+      pool.attach(new HeadlessAccountDirectory({ authPath }));
+    }
+  }
 
   // The indicator shows the account the current session's `anthropic`
   // requests go to, and that account's usage.  `after_provider_response`
@@ -223,6 +252,25 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     getArgumentCompletions: statusArgumentCompletions,
     handler: createStatusCommandHandler(readDiagnostics),
   });
+}
+
+/**
+ * Pi's built-in `anthropic` provider, whose OAuth flow the login slots reuse,
+ * or `undefined` when the host's pi-ai does not expose it.
+ */
+async function builtinAnthropicProvider(): Promise<Provider | undefined> {
+  try {
+    const { builtinProviders } = await import(
+      "@earendil-works/pi-ai/providers/all"
+    );
+    const anthropic = builtinProviders().find(
+      (provider) => provider.id === "anthropic",
+    );
+    return anthropic?.auth.oauth ? anthropic : undefined;
+  } catch (error) {
+    debugLog("builtin-anthropic-unavailable", { error: String(error) });
+    return undefined;
+  }
 }
 
 /** The event context fields the account indicator reads. */

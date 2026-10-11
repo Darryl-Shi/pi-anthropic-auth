@@ -18,11 +18,18 @@ export interface SlotRegistrar {
 }
 
 /** A backstop on the slot scan, far above any real account count. */
-const MAX_ACCOUNTS = 16;
+export const MAX_ACCOUNTS = 16;
 
 /** `anthropic-2`, `anthropic-3`, …: account 1 is `anthropic` itself. */
 export function accountSlotId(index: number): string {
   return `${PRIMARY_ACCOUNT}-${index}`;
+}
+
+/** The index of a slot id (`anthropic-3` → 3), or `undefined` for any other id. */
+export function slotIndex(id: string): number | undefined {
+  const match = /^anthropic-(\d+)$/.exec(id);
+  const index = match ? Number(match[1]) : NaN;
+  return index >= 2 && index <= MAX_ACCOUNTS ? index : undefined;
 }
 
 /**
@@ -108,7 +115,7 @@ export class AccountSlots {
  * delegate to `anthropic` for completeness; with no models, Pi never routes a
  * request to it.
  */
-function slotProvider(
+export function slotProvider(
   id: string,
   index: number,
   base: Provider,

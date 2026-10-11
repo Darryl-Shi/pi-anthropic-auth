@@ -913,6 +913,104 @@ describe("index registration: multiple Claude accounts", () => {
       );
     });
   });
+
+  // A host that builds pi's model runtime over its own agent dir and never
+  // starts a session (the software factory) gets neither `session_start` nor
+  // a chance to register providers after load.
+  describe("without a session", () => {
+    function writeAuth(logins: Record<string, string>): void {
+      const expires = Date.now() + 60 * 60_000;
+      const data = Object.fromEntries(
+        Object.entries(logins).map(([id, access]) => [
+          id,
+          { type: "oauth", access, refresh: `refresh-${id}`, expires },
+        ]),
+      );
+      writeFileSync(join(agentDir, "auth.json"), JSON.stringify(data));
+    }
+
+    test("registers the stored slots and the spare at load", async () => {
+      writeAuth({ anthropic: OAUTH_TOKEN, "anthropic-3": SECOND_TOKEN });
+      const { default: registerExtension } = await import("#src/index");
+      const { pi, calls, nativeRegistrations } = createFakePi();
+      await registerExtension(pi);
+
+      assert.deepEqual(calls, [
+        "unregister:anthropic",
+        "register:anthropic",
+        "register-native:anthropic-2",
+        "register-native:anthropic-3",
+      ]);
+      assert.equal(
+        nativeRegistrations.get("anthropic-2")?.name,
+        "Anthropic account 2",
+      );
+    });
+
+    test("registers no slots for an API-key anthropic login", async () => {
+      writeFileSync(
+        join(agentDir, "auth.json"),
+        JSON.stringify({ anthropic: { type: "api_key", key: "sk-ant-api" } }),
+      );
+      const { default: registerExtension } = await import("#src/index");
+      const { pi, calls } = createFakePi();
+      await registerExtension(pi);
+
+      assert.deepEqual(calls, ["unregister:anthropic", "register:anthropic"]);
+    });
+
+    test("routes a session to the least-used stored account", async () => {
+      writeAuth({ anthropic: OAUTH_TOKEN, "anthropic-2": SECOND_TOKEN });
+      // Usage probes: the primary account is busier than the second.
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((_input: string, init?: RequestInit) =>
+          Promise.resolve(
+            new Response(
+              JSON.stringify({
+                five_hour: {
+                  utilization:
+                    new Headers(init?.headers).get("authorization") ===
+                    `Bearer ${OAUTH_TOKEN}`
+                      ? 80
+                      : 10,
+                  resets_at: null,
+                },
+              }),
+            ),
+          ),
+        ),
+      );
+      onTestFinished(() => {
+        vi.unstubAllGlobals();
+      });
+
+      const { default: registerExtension } = await import("#src/index");
+      const fake = createFakePi();
+      await registerExtension(fake.pi);
+
+      const wire = vi.fn((_input: string, _init?: RequestInit) =>
+        Promise.resolve(new Response("ok")),
+      );
+      fake.dispatch(MODEL, CONTEXT, {
+        apiKey: OAUTH_TOKEN,
+        sessionId: "conversation-1",
+        fetch: wire as unknown as typeof fetch,
+      });
+      const transportFetch = delegateCalls[0]?.options?.fetch;
+      assert.ok(transportFetch, "OAuth requests get a fetch wrapper");
+      await transportFetch("https://api.anthropic.com/v1/messages", {
+        headers: { authorization: `Bearer ${OAUTH_TOKEN}` },
+        body: "{}",
+      });
+
+      const [, sent] = wire.mock.calls[0] ?? [];
+      assert.equal(
+        new Headers(sent?.headers).get("authorization"),
+        `Bearer ${SECOND_TOKEN}`,
+      );
+    });
+  });
 });
 
 describe("index registration: account indicator", () => {

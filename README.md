@@ -58,6 +58,10 @@ Account 1 is the one you logged in with `/login anthropic`.
 To remove an account, `/logout` and pick it.
 Pi stores, refreshes, and removes these logins like any other, so there is no config to edit.
 
+Hosts that run pi's model runtime without starting a pi session (for example a software factory that keeps its own agent dir) get the same pool.
+The account slots are registered when the extension loads, from the logins in that agent dir's `auth.json`, so log in to **Anthropic account N** through the host's own login flow and restart it once, so the next free slot is offered.
+A logged-in account joins the pool within ten seconds; requests are pinned per `sessionId` the host sends.
+
 How sessions are placed:
 
 1. A session's first request goes to the account with the most headroom: for each of its 5-hour and 7-day windows, the unused share divided by the share of the window left before it resets, taking the tighter of the two.

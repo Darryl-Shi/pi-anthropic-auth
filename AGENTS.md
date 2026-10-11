@@ -57,7 +57,7 @@ The current implementation does the following:
 7. Recovers from a `claude_code_version_too_old` rejection by retrying once at the floor Anthropic names, remembering that floor for later requests, and appending a hint to the error when it cannot recover (Issue #75)
 8. Gates all shaping on the `sk-ant-oat` OAuth access-token prefix, so API-key and non-Anthropic requests pass through untouched
 9. Registers the same wrapper on any extra provider named in the extension's config file, for Anthropic OAuth subscriptions another extension registers under its own name (pi-multi-pass's `anthropic-2`, Issue #70)
-10. Spreads `anthropic` OAuth sessions across several Claude accounts: extra accounts are login-only `anthropic-N` providers registered at `session_start` (always one spare `/login` slot), each session is pinned to the account with the most headroom (Anthropic's own utilization weighed against each window's time to reset), and a 429 or 401 fails the session over (see `docs/architecture.md`, "Account pool")
+10. Spreads `anthropic` OAuth sessions across several Claude accounts: extra accounts are login-only `anthropic-N` providers registered at `session_start`, and also at load from `auth.json` when the `anthropic` login is OAuth, for hosts that never start a session (always one spare `/login` slot), each session is pinned to the account with the most headroom (Anthropic's own utilization weighed against each window's time to reset), and a 429 or 401 fails the session over (see `docs/architecture.md`, "Account pool")
 11. Shows the session's account and its 5-hour and weekly usage as pi-powerbar segments (over pi's event bus) and a footer status, because pi-powerbar's own usage segments read only the `anthropic` login
 
 It wraps, but does not reimplement, Pi's built-in Anthropic streaming transport.
@@ -95,7 +95,9 @@ The main extension entrypoint is `src/index.ts`.
 It uses two Pi extension seams:
 
 1. `pi.registerProvider("anthropic", { api: "anthropic-messages", streamSimple })`, plus the same `{ api, streamSimple }` registration for each provider named in `<agentDir>/extensions/pi-anthropic-auth/config.json`, and — from a `session_start` handler, only for a trusted project — in `<cwd>/.pi/extensions/pi-anthropic-auth/config.json`
-2. `pi.registerProvider(provider: Provider)` (the native overload), from `session_start`, for the login-only account slots `anthropic-2`, … whose `auth.oauth` is the registry's own `anthropic` OAuth method; the account pool reads their tokens through `ctx.modelRegistry.getApiKeyForProvider`
+2. `pi.registerProvider(provider: Provider)` (the native overload), from `session_start`, for the login-only account slots `anthropic-2`, … whose `auth.oauth` is the registry's own `anthropic` OAuth method; the account pool reads their tokens through `ctx.modelRegistry.getApiKeyForProvider`.
+   When the stored `anthropic` login is OAuth, the slots are also registered at load from `auth.json`, and until a session attaches the registry the pool resolves tokens through a private `ModelRuntime` (`src/headless-accounts.ts`), for hosts that embed pi's model runtime and never start a session.
+   `<agentDir>` is the dir this copy was installed into unless `PI_CODING_AGENT_DIR` is set (`src/agent-dir.ts`).
 
 The `streamSimple` wrapper is the single shaping point.
 It delegates to Pi's built-in Anthropic `streamSimple` transport (resolved at runtime by `src/host-transport.ts`) while injecting an `onPayload` step that runs all provider-specific logic (billing header injection, system prompt shaping).

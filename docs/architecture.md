@@ -158,7 +158,11 @@ Each extra account is a login-only Pi provider, `anthropic-2`, `anthropic-3`, â€
 Its `auth.oauth` is the registry's own `anthropic` OAuth method, so `/login` runs Pi's built-in Claude flow, Pi stores the credential under the slot id in its normal one-entry-per-provider shape, refreshes it under its own lock, and `/logout` removes it.
 A slot registers no models, so the model picker is unchanged and Pi never routes a request to it.
 
-The slots need `ctx.modelRegistry.getProvider("anthropic")`, so they are registered from `session_start`, not at load.
+In a pi session the slots are refreshed from `session_start` against `ctx.modelRegistry`.
+When the stored `anthropic` login is OAuth, they are also registered at load, from `auth.json` (`src/headless-accounts.ts`): the slots then reuse the OAuth flow of pi-ai's built-in `anthropic` provider, and the pool reads its accounts from `auth.json` until a session attaches the registry.
+This is for hosts that load extensions only for their providers and never start a session, such as a factory that runs pi's `ModelRuntime` over its own agent dir: there `session_start` never fires, and a registration made after load lands in the loader's pending queue, which the host has already drained.
+Without a session, each slot's token comes from a private `ModelRuntime` over the same `auth.json` (`modelsPath: null`, so it never writes the host's `models-store.json`); pi refreshes the token under the file lock the host shares, and a login another process stores joins the pool within ten seconds.
+`auth.json` and the global config file are read from the agent dir this copy was installed into (`src/agent-dir.ts`), unless `PI_CODING_AGENT_DIR` is set, because such a host passes its dir to pi's loaders explicitly and `getAgentDir()` still names `~/.pi/agent` there.
 Every logged-in slot is registered plus exactly one spare, the lowest free index, which is what `/login` offers as "Anthropic account N".
 After a logout reopens a lower index, the spare this extension registered above it is unregistered again, so `/login` still offers exactly one free slot; a slot another extension registered is never unregistered.
 Discovery reads `getProviderAuthStatus`, whose stored-provider snapshot covers every `auth.json` key whether or not a provider is registered, so a logged-in slot is found before it is registered and a gap left by a logout is offered again.
